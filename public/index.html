@@ -1,104 +1,11 @@
 <!doctype html>
-<html lang="ko">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#101010">
-<title>Threads 제휴 마케팅 자동화</title>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#111318"><title>티스토리 글 작성 자동화</title>
 <style>
-*{box-sizing:border-box}
-body{margin:0;background:#0d0d0f;color:#f5f5f5;font-family:system-ui,-apple-system,sans-serif}
-main{max-width:760px;margin:auto;padding:22px 16px 60px}
-.top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:24px}
-.brand{font-size:22px;font-weight:800}
-.status{font-size:12px;color:#aaa;border:1px solid #333;border-radius:30px;padding:7px 10px}
-.card{background:#18181b;border:1px solid #29292e;border-radius:18px;padding:17px;margin:14px 0}
-h2{font-size:17px;margin:0 0 14px}
-label{display:block;color:#aaa;font-size:13px;margin:12px 0 7px}
-input,textarea,select{width:100%;border:1px solid #39393f;background:#101012;color:white;border-radius:11px;padding:12px;font:inherit}
-textarea{min-height:165px;resize:vertical;line-height:1.55}
-button{border:0;border-radius:11px;padding:12px 15px;background:#fff;color:#111;font-weight:750;font-size:14px;cursor:pointer}
-button:disabled{opacity:.5;cursor:wait}
-button.secondary{background:#303036;color:#fff}
-button.danger{background:#492326;color:#ffd9dc}
-.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-.actions button{flex:1}
-.muted{color:#999;font-size:12px;line-height:1.5}
-.item{border-top:1px solid #303036;padding:13px 0}
-.item p{white-space:pre-wrap;line-height:1.5;margin:7px 0;overflow-wrap:anywhere}
-.pill{font-size:11px;color:#bbb}
-.tabs{display:flex;gap:8px;margin-bottom:15px}
-.tabs button{flex:1}
-.hidden{display:none!important}
-#linkInfo{color:#b8d5ff;font-size:12px;line-height:1.5;margin-top:8px;overflow-wrap:anywhere}
-#productImageWrap{margin-top:12px}
-#productImage{display:block;max-width:100%;max-height:360px;object-fit:contain;border-radius:12px;background:#101012;border:1px solid #333}
-</style>
-<script src="/app.js?v=23" defer></script>
-</head>
-<body>
-<main>
-  <div class="top"><div class="brand">◉ Threads 제휴 자동화</div><div class="status" id="status">화면 준비 중</div></div>
-
-  <div class="card">
-    <h2>콘텐츠 종류</h2>
-    <label for="category">어떤 글을 만들까요?</label>
-    <select id="category">
-      <option value="toss">토스 쉐어링크 상품 소개</option>
-      <option value="daily">일상·정보 게시글</option>
-    </select>
-
-    <div id="affiliateWrap">
-      <label id="affiliateLabel" for="affiliateLink">토스 쉐어링크</label>
-      <input id="affiliateLink" type="text">
-      <div class="actions"><button class="secondary" id="linkPreview" type="button">링크에서 상품 정보 가져오기</button></div>
-      <div id="linkInfo"></div>
-      <div id="productImageWrap" class="hidden">
-        <img id="productImage" alt="Threads 게시물에 자동 첨부될 상품 사진">
-        
-      </div>
-    </div>
-
-    <label id="topicLabel" for="topic">상품명</label>
-    <input id="topic">
-
-    <label for="tone">글 말투</label>
-    <select id="tone">
-      <option>생활형 후기형</option>
-      <option>더 유머러스한 생활형</option>
-      <option>담백한 추천형</option>
-    </select>
-
-    <div class="actions">
-      <button id="generate" type="button">AI 글 생성</button>
-      <button id="todayDaily" class="secondary hidden" type="button">오늘의 일상</button>
-      <button id="emotionalQuote" class="secondary hidden" type="button">감성글귀</button>
-      <button id="wiseSaying" class="secondary hidden" type="button">명언</button>
-    </div>
-    <label for="post">게시글 본문</label>
-    <textarea id="post"></textarea>
-    <label for="comment">게시 후 첫 댓글</label>
-    <textarea id="comment" style="min-height:110px"></textarea>
-    <div class="actions">
-      <button id="publish" type="button">게시글 + 댓글 등록</button>
-      <button class="secondary" id="showSchedule" type="button">게시글 + 댓글 예약</button>
-    </div>
-    <div id="scheduleBox" class="hidden">
-      <label for="when">게시 예약 시간</label>
-      <input id="when" type="datetime-local">
-      <div class="actions"><button id="schedule" type="button">예약 등록</button></div>
-    </div>
-    <p class="muted" id="message" role="status"></p>
-  </div>
-
-  <div class="card">
-    <div class="tabs">
-      <button class="secondary" id="historyTab" type="button">게시 기록</button>
-      <button class="secondary" id="scheduledTab" type="button">예약 목록</button>
-    </div>
-    <div id="list"></div>
-  </div>
-
-</main>
-</body>
-</html>
+*{box-sizing:border-box}body{margin:0;background:#101116;color:#f5f5f7;font-family:system-ui,-apple-system,sans-serif}main{max-width:760px;margin:auto;padding:22px 15px 60px}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}.brand{font-size:21px;font-weight:850}.status{font-size:11px;color:#aaa;border:1px solid #363741;border-radius:30px;padding:7px 10px}.card{background:#1a1c23;border:1px solid #30323c;border-radius:17px;padding:16px;margin:13px 0}h2{font-size:16px;margin:0 0 13px}label{display:block;color:#b5b6c0;font-size:13px;margin:13px 0 7px}input,textarea{width:100%;border:1px solid #41434f;background:#111319;color:#fff;border-radius:10px;padding:12px;font:inherit}textarea{min-height:300px;line-height:1.7;resize:vertical}button{border:0;border-radius:11px;padding:13px 14px;background:#e9eaff;color:#171823;font-weight:800;font-size:14px;cursor:pointer}button:disabled{opacity:.5}.secondary{background:#353844;color:#fff}.actions{display:flex;gap:8px;margin-top:12px}.actions button{flex:1}.muted{font-size:12px;color:#9b9daa;line-height:1.6}.preview{display:flex;gap:12px;margin-top:12px}.preview img{width:92px;height:92px;object-fit:contain;border-radius:10px;background:#fff}.preview p{font-size:12px;color:#bbb;line-height:1.5;margin:0}.hidden{display:none}#message{white-space:pre-wrap;color:#c7d2fe;font-size:13px;line-height:1.5;margin-top:12px}.warning{color:#ffd79b}.step{font-size:12px;color:#aaa;line-height:1.65}
+</style><script src="/app.js?v=1" defer></script></head>
+<body><main><div class="top"><div class="brand">✍️ 티스토리 글 자동작성</div><div class="status" id="status">연결 확인 중</div></div>
+<div class="card"><h2>1. 상품 정보 가져오기</h2><label for="url">상품 URL</label><input id="url" type="url" placeholder="상품 페이지 링크를 붙여넣기"><div class="actions"><button class="secondary" id="fetch">상품 정보 가져오기</button></div><div class="preview hidden" id="preview"><img id="image" alt="상품 이미지"><p id="info"></p></div><label for="product">상품명</label><input id="product" placeholder="상품명 (자동 입력 가능)"><label for="description">상품 설명 / 특징</label><textarea id="description" style="min-height:100px" placeholder="페이지에서 자동으로 가져온 설명이 여기에 표시됩니다. 부족한 정보는 직접 추가해 주세요."></textarea><label for="extra">추가 요청 (선택)</label><input id="extra" placeholder="예: 가성비 중심, 주요 기능 위주로 설명"></div>
+<div class="card"><h2>2. AI 블로그 글 생성</h2><div class="actions"><button id="generate">상품 소개 글 생성</button></div><p class="muted">실제 사용하지 않은 상품을 직접 사용한 것처럼 꾸며내지 않고, 확인된 상품 정보 중심으로 자연스러운 소개 글을 작성합니다.</p></div>
+<div class="card"><h2>3. 게시 전 확인 및 수정</h2><label for="postTitle">글 제목</label><input id="postTitle" placeholder="생성된 제목"><label for="body">본문</label><textarea id="body" placeholder="AI가 작성한 본문이 여기에 표시됩니다. 직접 수정할 수 있어요."></textarea><div class="actions"><button class="secondary" id="copy">제목 + 본문 복사</button><button id="openTistory">티스토리 글쓰기 열기</button></div><p class="muted warning">모바일 브라우저에서는 다른 사이트의 로그인 세션과 글쓰기 화면을 외부 프로그램이 직접 조작할 수 없습니다. 따라서 현재 버전은 글을 생성·수정한 뒤 복사하고 티스토리 편집기를 여는 방식입니다. 최종 발행은 티스토리에서 확인 후 눌러 주세요.</p><div id="message" role="status"></div></div>
+<div class="card"><h2>사용 방법</h2><p class="step">① 상품 링크 입력 → ② 상품 정보 가져오기 → ③ 글 생성 → ④ 제목과 본문 확인·수정 → ⑤ 복사 후 티스토리 글쓰기에서 붙여넣기 → ⑥ 직접 발행</p></div>
+</main></body></html>
