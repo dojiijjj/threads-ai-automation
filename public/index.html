@@ -32,7 +32,7 @@ button.danger{background:#492326;color:#ffd9dc}
 .hidden{display:none!important}
 #linkInfo{color:#b8d5ff;font-size:12px;line-height:1.5;margin-top:8px;overflow-wrap:anywhere}
 </style>
-<script src="/app.js?v=10" defer></script>
+<script src="/app.js?v=11" defer></script>
 </head>
 <body>
 <main>
@@ -63,16 +63,14 @@ button.danger{background:#492326;color:#ffd9dc}
       <option>담백한 추천형</option>
     </select>
 
-    <div class="actions"><button id="generate" type="button">AI 글 생성</button></div>
+    <div class="actions">
+      <button id="generate" type="button">AI 글 생성</button>
+      <button id="todayIssue" class="secondary hidden" type="button">오늘의 이슈</button>
+    </div>
     <label for="post">게시글 본문</label>
     <textarea id="post" placeholder="게시글 내용"></textarea>
     <label for="comment">게시 후 첫 댓글</label>
     <textarea id="comment" style="min-height:110px" placeholder="첫 댓글 내용"></textarea>
-    <div class="actions">
-      <button class="secondary" id="copyPost" type="button">게시글 복사</button>
-      <button class="secondary" id="copyComment" type="button">댓글 복사</button>
-      <button class="secondary" id="checkReply" type="button">댓글 권한 확인</button>
-    </div>
     <div class="actions">
       <button id="publish" type="button">게시글 + 댓글 등록</button>
       <button class="secondary" id="showSchedule" type="button">게시글 + 댓글 예약</button>
