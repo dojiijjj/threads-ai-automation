@@ -14,8 +14,63 @@ async function checkHost(u){const h=new URL(u).hostname.toLowerCase();if(h==="lo
 async function fetchPage(raw,depth=0){const u=urlOf(raw);await checkHost(u);const c=new AbortController(),t=setTimeout(()=>c.abort(),10000);try{const r=await fetch(u,{redirect:"manual",signal:c.signal,headers:{"User-Agent":"Mozilla/5.0","Accept":"text/html"}});if([301,302,303,307,308].includes(r.status)){if(depth>=3)throw new Error("링크 이동이 너무 많습니다.");const loc=r.headers.get("location");if(!loc)throw new Error("이동 주소를 확인할 수 없습니다.");return fetchPage(new URL(loc,u).toString(),depth+1);}if(!r.ok)throw new Error("상품 페이지를 열지 못했습니다. HTTP "+r.status);const type=r.headers.get("content-type")||"";if(!/text\/html|application\/xhtml\+xml/i.test(type))throw new Error("상품 정보를 읽을 수 없는 페이지입니다.");const reader=r.body.getReader();let bytes=0,parts=[];while(true){const {done,value}=await reader.read();if(done)break;bytes+=value.length;if(bytes>1200000){await reader.cancel();break;}parts.push(Buffer.from(value));}return Buffer.concat(parts).toString("utf8");}catch(e){if(e.name==="AbortError")throw new Error("상품 페이지 응답 시간이 초과됐습니다.");throw e;}finally{clearTimeout(t);}}
 function decode(s){return String(s||"").replace(/&amp;/gi,"&").replace(/&quot;/gi,'"').replace(/&#39;|&apos;/gi,"'").replace(/&lt;/gi,"<").replace(/&gt;/gi,">").replace(/&#(\d+);/g,(_,n)=>String.fromCharCode(+n)).replace(/\s+/g," ").trim();}
 function meta(html,key){for(const tag of html.match(/<meta\b[^>]*>/gi)||[]){const a={};tag.replace(/([\w:-]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/g,(_,k,z,d,s,b)=>(a[k.toLowerCase()]=d??s??b,z));if((a.property||"").toLowerCase()===key||(a.name||"").toLowerCase()===key)return decode(a.content);}return "";}
-app.get("/api/preview",async(req,res)=>{try{const u=urlOf(req.query.url),h=await fetchPage(u),tm=h.match(/<title[^>]*>([\s\S]*?)<\/title>/i);const title=meta(h,"og:title")||meta(h,"twitter:title")||decode(tm?tm[1].replace(/<[^>]+>/g," "):"");const description=meta(h,"og:description")||meta(h,"description")||meta(h,"twitter:description");const imageRaw=meta(h,"og:image")||meta(h,"og:image:secure_url")||meta(h,"twitter:image");let image="";try{const x=new URL(imageRaw,u);if(["http:","https:"].includes(x.protocol))image=x.toString();}catch(_){}res.json({title:title.slice(0,300),description:description.slice(0,1500),image,url:u});}catch(e){res.status(422).json({error:e.message});}});
-
+function findProductNode(value){
+ if(!value)return null;
+ if(Array.isArray(value)){for(const item of value){const found=findProductNode(item);if(found)return found;}return null;}
+ if(typeof value!=="object")return null;
+ const type=value["@type"];
+ if((Array.isArray(type)?type:[type]).some(x=>String(x||"").toLowerCase()==="product"))return value;
+ if(value["@graph"]){const found=findProductNode(value["@graph"]);if(found)return found;}
+ for(const key of Object.keys(value)){if(key==="offers"||key==="brand")continue;const found=findProductNode(value[key]);if(found)return found;}
+ return null;
+}
+function productImageList(html,baseUrl,productNode){
+ const raw=[];
+ const add=(value)=>{for(const item of (Array.isArray(value)?value:[value])){if(typeof item!=="string")continue;try{const u=new URL(item,baseUrl);if(u.protocol==="https:"&&!u.username&&!u.password&&!/sprite|logo|icon|pixel|blank|placeholder/i.test(u.pathname))raw.push(u.toString());}catch(_){}}};
+ add(meta(html,"og:image"));add(meta(html,"og:image:secure_url"));add(meta(html,"twitter:image"));
+ if(productNode)add(productNode.image);
+ const tags=html.match(/<img\b[^>]*>/gi)||[];
+ for(const tag of tags.slice(0,90)){
+  const attrs={};tag.replace(/([\w:-]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/g,(_,k,z,d,s,v)=>(attrs[k.toLowerCase()]=d??s??v,z));
+  add(attrs["data-src"]||attrs["data-original"]||attrs.src||attrs["data-lazy-src"]);
+ }
+ return [...new Set(raw)].slice(0,8);
+}
+function extractProductInfo(html,baseUrl){
+ const titleTag=html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+ const title=meta(html,"og:title")||meta(html,"twitter:title")||decode(titleTag?titleTag[1].replace(/<[^>]+>/g," "):"");
+ const description=meta(html,"og:description")||meta(html,"description")||meta(html,"twitter:description")||"";
+ let productNode=null;
+ for(const match of html.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)){
+  try{const parsed=JSON.parse(match[1].trim());productNode=findProductNode(parsed);if(productNode)break;}catch(_){}
+ }
+ const name=clean(productNode?.name||title,300);
+ const brandValue=productNode?.brand;
+ const brand=clean(typeof brandValue==="string"?brandValue:brandValue?.name||meta(html,"product:brand")||meta(html,"brand"),160);
+ const offer=Array.isArray(productNode?.offers)?productNode.offers[0]:(productNode?.offers||{});
+ const price=clean(offer.price||offer.lowPrice||meta(html,"product:price:amount")||"",60);
+ const currency=clean(offer.priceCurrency||meta(html,"product:price:currency")||"",8);
+ const availability=clean(String(offer.availability||"").split("/").pop()||"",60);
+ const sku=clean(productNode?.sku||productNode?.mpn||"",80);
+ const features=[];
+ if(Array.isArray(productNode?.additionalProperty)){
+  for(const p of productNode.additionalProperty.slice(0,18)){const n=clean(p.name,80),v=clean(p.value,180);if(n&&v)features.push(n+": "+v);}
+ }
+ const pageText=decode(html
+  .replace(/<!--[\s\S]*?-->/g," ")
+  .replace(/<(script|style|svg|noscript|header|footer|nav|aside)\b[^>]*>[\s\S]*?<\/\1>/gi," ")
+  .replace(/<(br|\/p|\/div|\/li|\/tr|\/h[1-6])\b[^>]*>/gi,"\n")
+  .replace(/<[^>]+>/g," ")
+ ).slice(0,9000);
+ const images=productImageList(html,baseUrl,productNode);
+ return {url:baseUrl,title:name||title,description:clean(description,1800),brand,price,currency,availability,sku,features,images,pageText};
+}
+app.get("/api/preview",async(req,res)=>{
+ try{
+  const url=urlOf(req.query.url),html=await fetchPage(url),product=extractProductInfo(html,url);
+  res.json({ok:true,...product,images:product.images.slice(0,5)});
+ }catch(e){res.status(422).json({error:e.message||"상품 정보를 읽지 못했습니다."});}
+});
 function stripMeta(value){return decode(String(value||"").replace(/<[^>]*>/g," ").replace(/&nbsp;/gi," ")).slice(0,350);}
 function licenseAllowed(value){const s=String(value||"").trim().toUpperCase();return s==="CC0"||s.includes("PUBLIC DOMAIN")||/^CC BY(?:-SA)?(?:\s|$)/.test(s);}
 async function searchCommons(query){
@@ -39,83 +94,93 @@ async function searchCommons(query){
 }
 app.post("/api/images",async(req,res)=>{
  const queries=Array.isArray(req.body.queries)?req.body.queries.map(x=>clean(x,100)).filter(Boolean).slice(0,5):[];
- if(!queries.length)return res.status(400).json({error:"이미지 검색어가 없습니다."});
+ const productUrl=clean(req.body.productUrl,2000);
+ const productImages=Array.isArray(req.body.productImages)?req.body.productImages.slice(0,3):[];
+ if(!queries.length&&!productImages.length)return res.status(400).json({error:"이미지 검색어가 없습니다."});
  try{
+  const images=[],seen=new Set();
+  for(const p of productImages){
+   try{
+    const u=new URL(p.url);
+    if(u.protocol!=="https:"||u.username||u.password||seen.has(u.href))continue;
+    seen.add(u.href);
+    images.push({id:"product-"+images.length,title:clean(p.title||"상품 대표 이미지",180),thumbUrl:u.href,originalUrl:u.href,sourceUrl:productUrl||u.origin,artist:"상품 판매 페이지",license:"판매처 이미지 이용 조건 확인 필요",licenseUrl:"",description:"상품 페이지에서 가져온 대표 이미지",kind:"product"});
+   }catch(_){}
+  }
   const batches=await Promise.all(queries.map(q=>searchCommons(q).catch(e=>{console.warn("Commons search:",q,e.message);return [];})));
-  const seen=new Set(),images=[];
   for(let i=0;i<batches.length;i++)for(const item of batches[i]){
    const key=item.id||item.originalUrl;if(seen.has(key))continue;seen.add(key);
-   images.push({...item,query:queries[i]});if(images.length>=5)break;
+   images.push({...item,query:queries[i],kind:"commons"});if(images.length>=5)break;
   }
   res.json({images:images.slice(0,5),searched:queries});
  }catch(e){res.status(502).json({error:e.message||"관련 이미지를 찾지 못했습니다."});}
 });
 app.post("/api/generate",async(req,res)=>{
  if(!process.env.GEMINI_API_KEY)return res.status(503).json({error:"Railway 환경변수 GEMINI_API_KEY가 필요합니다."});
- const channel=["naver","google"].includes(req.body.channel)?req.body.channel:"naver";
- const topic=clean(req.body.topic,300),brand=clean(req.body.brand,240),product=clean(req.body.product,240);
- const subject=[brand,product,topic].filter(Boolean).join(" ");
- const keywords=Array.isArray(req.body.keywords)?req.body.keywords.map(x=>clean(x,60)).filter(Boolean).slice(0,3):String(req.body.keywords||"").split(/[,\n]/).map(x=>clean(x,60)).filter(Boolean).slice(0,3);
- const perspective=["reviewer","supplier"].includes(req.body.perspective)?req.body.perspective:"reviewer";
- const style=["expert","influencer"].includes(req.body.style)?req.body.style:"expert";
- const draft=clean(req.body.draft,10000),extra=clean(req.body.extra,2000);
- if(!subject&&!draft)return res.status(400).json({error:"글 주제나 초안을 입력해 주세요."});
- const photos=Array.isArray(req.body.photos)?req.body.photos.slice(0,5):[];
- const prompt=[
-  "역할: 너는 네이버 블로그 SEO 전문 작가이자 콘텐츠 마케팅 전문가다. 검색엔진만이 아니라 실제 독자가 읽었을 때 유용하고 신뢰할 수 있는 한국어 블로그 글을 쓴다.",
-  "채널 최적화: "+(channel==="naver"?"네이버 블로그. 검색 의도에 맞춘 구체적인 정보, 자연스러운 제목과 소제목, 읽기 쉬운 문단을 우선한다.":"구글 검색 SEO. 검색 의도 충족, 명확한 H2/H3 구조, 충분한 맥락과 구체적인 설명, 자연스러운 관련 용어 사용을 우선한다."),
-  "글 주제/제품: "+(subject||"초안 기반"),
-  "핵심 키워드(사용자 입력): "+(keywords.join(", ")||"입력되지 않음. 주제에 맞게 3개 추천"),
-  "작성자 관점: "+(perspective==="reviewer"?"리뷰어 관점":"공급자/브랜드 제공자 관점"),
-  "문체: "+(style==="expert"?"전문가. 정확하고 신뢰도 높은 설명, 용어를 쉬운 말로 풀어 쓰기":"인플루언서. 친근하고 생동감 있는 표현, 독자와 대화하는 듯한 호흡"),
-  "기존 초안(있으면 내용과 형식을 최대한 유지하면서 개선): "+(draft||"없음"),
-  "추가 요청: "+(extra||"없음"),
-  "첨부된 사진이 있다면 사진에서 실제로 확인할 수 있는 제품/장면만 묘사하고, 사진에 없는 정보나 사용 경험을 만들어내지 마.",
-  "작성 원칙: 자연스럽고 사람다운 문장, 친절한 존댓말, 검색 의도에 직접 답변, 키워드는 문맥에 맞게 반복, 제목에 핵심 키워드 포함, 문단마다 적절한 소제목, 모바일에서 읽기 쉬운 문단 길이, 과장 광고와 키워드 남용 금지.",
-  "핵심 키워드는 정확히 3개 제안. 사용자 키워드가 있으면 최대한 반영하되 주제와 맞지 않는 키워드는 억지로 넣지 말고 더 적합한 것으로 교체.",
-  "본문 첫 문단에 핵심 키워드를 자연스럽게 포함. 소제목의 약 절반에 핵심 키워드 또는 연관 표현을 자연스럽게 포함. 문장마다 키워드를 반복하지 마.",
-  "실제 경험이 제공되지 않았다면 사용·구매·체험했다고 쓰지 마. 리뷰어 관점일 때는 제공된 실제 경험만 1인칭으로 표현하고, 경험이 없으면 제품 정보 기반의 객관적 검토/소개로 작성. 공급자 관점에서도 인증·효능·수치·가격·배송 정보 등 미제공 사실을 만들지 마.",
-  "기본 분량은 본문 약 1600자(공백 포함, 대략 1300~1900자). 초안 재작성 시 원문의 핵심 정보와 논리, 구성은 최대한 보존해.",
-  "이미지 검색을 위한 짧은 영어 검색어 5개를 생성해. 서로 다른 장면과 주제를 찾도록 하고 제품/주제와 직접 관련되게 작성해. 생성한 5개 이미지에 대해 각각 대체 텍스트(alt), 짧은 캡션, 본문 내 권장 배치 위치를 생성해.",
-  "본문에는 소제목과 자연스러운 문단을 구성하고, 이미지 5개를 넣을 위치를 본문 문단 사이에 [[IMAGE_1]]부터 [[IMAGE_5]]까지 각각 한 번씩 표시해. 이미지 표시는 문장 중간이 아닌 문단 사이 단독 줄에 둬.",
-  "네이버 블로그 태그 20개를 제안해. # 없이 단어/짧은 구 형태로 배열해.",
-  "결과는 아래 키를 갖는 유효한 JSON 객체만 출력해: keywords(문자열 3개 배열), title(문자열), body(문자열), tags(문자열 20개 배열), imageQueries(영어 검색어 5개 배열), imageAlts(문자열 5개 배열), imageCaptions(문자열 5개 배열), imagePlacements(문자열 5개 배열). 마크다운 코드블록이나 JSON 외 해설은 금지."
- ].join("\n");
- const parts=[{text:prompt}];
- for(const p of photos){if(p&&typeof p.data==="string"){const m=p.data.match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/);if(m&&m[2].length<1800000)parts.push({inlineData:{mimeType:m[1],data:m[2]}});}}
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),90000);
- let lastError="응답 없음";
+ let url="";
+ try{url=urlOf(req.body.url);}catch(e){return res.status(400).json({error:e.message});}
  try{
-  for(const model of MODELS){
-   for(let attempt=0;attempt<2;attempt++){
-    try{
-     const response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},body:JSON.stringify({contents:[{parts}],generationConfig:{temperature:0.7,maxOutputTokens:3500,responseMimeType:"application/json"}}),signal:controller.signal});
-     const data=await response.json().catch(()=>({}));
-     if(response.ok){
-      const raw=data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("").trim()||"";
-      const result=JSON.parse(raw.replace(/^\s*\x60{3}json\s*|\s*\x60{3}$/g,""));
-      if(!result.title||!result.body)throw new Error("AI 결과에 제목 또는 본문이 없습니다.");
-      const arr=(v,n)=>Array.isArray(v)?v.map(x=>String(x||"").trim()).filter(Boolean).slice(0,n):[];
-      result.keywords=arr(result.keywords,3);result.tags=arr(result.tags,20);
-      result.imageQueries=arr(result.imageQueries,5);result.imageAlts=arr(result.imageAlts,5);result.imageCaptions=arr(result.imageCaptions,5);result.imagePlacements=arr(result.imagePlacements,5);
-      while(result.keywords.length<3)result.keywords.push(subject||topic||"블로그 정보");
-      while(result.tags.length<20)result.tags.push(result.keywords[result.tags.length%3]);
-      while(result.imageQueries.length<5)result.imageQueries.push((subject||topic||"related subject")+" "+["details","use","features","lifestyle","close up"][result.imageQueries.length]);
-      while(result.imageAlts.length<5)result.imageAlts.push(result.imageQueries[result.imageAlts.length]);
-      while(result.imageCaptions.length<5)result.imageCaptions.push(result.imageAlts[result.imageCaptions.length]);
-      while(result.imagePlacements.length<5)result.imagePlacements.push(["도입부 다음","첫 번째 특징 설명 뒤","두 번째 특징 설명 뒤","구매 전 확인 사항 근처","마무리 전"][result.imagePlacements.length]);
-      return res.json({...result,model,channel});
-     }
-     const message=data.error?.message||("Gemini 오류 "+response.status);lastError=model+" / "+response.status+" / "+message;
-     if([400,401,403].includes(response.status))return res.status(response.status).json({error:lastError});
-     if(![404,429,500,502,503,504].includes(response.status))return res.status(502).json({error:lastError});
-     if(attempt===0)await new Promise(resolve=>setTimeout(resolve,1200));else break;
-    }catch(e){if(e.name==="AbortError")throw e;lastError=e.message||String(e);if(attempt===0)await new Promise(resolve=>setTimeout(resolve,1000));else break;}
+  const html=await fetchPage(url);
+  const product=extractProductInfo(html,url);
+  if(!product.title&&!product.description&&!product.pageText)return res.status(422).json({error:"상품 페이지에서 정보를 읽지 못했습니다. 주소가 실제 상품 상세페이지인지 확인해 주세요."});
+  const prompt=[
+   "너는 Google 검색 SEO를 전문으로 하는 한국어 제품 블로그 작가다.",
+   "사용자가 제공한 상품 URL에서 실제로 읽어온 정보만 근거로 자연스럽고 신뢰도 높은 상품 소개 포스팅을 작성한다.",
+   "상품명: "+product.title,
+   "브랜드: "+product.brand,
+   "판매 페이지 설명: "+product.description,
+   "가격: "+[product.price,product.currency].filter(Boolean).join(" ")+" (페이지에 있을 때만)",
+   "판매 상태: "+product.availability,
+   "상품 코드: "+product.sku,
+   "구조화된 상품 특징: "+product.features.join("; "),
+   "페이지에서 추출한 추가 정보: "+product.pageText,
+   "원본 상품 URL: "+url,
+   "작성 원칙: 친절한 존댓말, 실제 사람이 읽기 좋은 흐름, 검색 의도에 맞는 충분한 정보, 과도한 광고 문구와 키워드 반복 금지.",
+   "기본 분량은 공백 포함 약 1600자(1300~1900자). 검색자가 이 제품을 이해하고 구매 전 확인할 사항까지 판단할 수 있게 써.",
+   "제목은 상품명과 가장 중요한 검색 키워드를 포함하되 과장하거나 클릭베이트로 쓰지 마.",
+   "핵심 키워드 3개를 추천하고 제목과 첫 문단, 적절한 소제목에 자연스럽게 녹여. 키워드 밀도를 위해 부자연스럽게 반복하지 마.",
+   "본문 구성: 자연스러운 도입, 제품 개요, 확인된 주요 특징과 사용 환경, 장점, 구매 전 확인할 점, 간결한 마무리. 필요한 만큼 소제목을 사용해.",
+   "실제 사용 경험이나 사용자가 제공한 후기가 없다. 직접 사용해봤다, 구매했다, 만족했다, 몇 주 써봤다, 가족이 좋아했다 등의 체험담을 절대 꾸며내지 마. 리뷰어처럼 친근하게 설명하되 객관적인 제품 소개/분석으로 작성해.",
+   "가격, 사양, 재료, 사이즈, 기능, 성능, 배송, 평점, 할인율, 효능 등은 페이지에서 확인한 내용만 써. 확인 안 된 정보는 만들어내지 말고, 필요하면 구매 전 상세페이지에서 확인하라고 안내해.",
+   "페이지 정보가 빈약하면 일반적인 장점을 사실처럼 단정하지 말고, 확인 가능한 정보와 구매 전 체크리스트 중심으로 작성해.",
+   "본문에 이미지 배치 위치를 [[IMAGE_1]]부터 [[IMAGE_5]]까지 각각 한 번씩 문단 사이에 단독 줄로 표시해.",
+   "상품 사진 1~2장은 상품 상세 페이지에서 추출한 이미지를 우선 사용한다. 나머지 관련 사진 검색어는 짧은 영어 검색어로 총 5개 제안해. 중복되지 않고 제품 카테고리 및 맥락에 맞는 장면을 찾아.",
+   "각 이미지에 대해 자연스러운 alt 텍스트, 캡션, 본문 내 권장 배치 위치를 제안해.",
+   "결과는 유효한 JSON 객체만 출력: keywords(문자열 3개 배열), title(문자열), body(문자열), imageQueries(영어 검색어 5개 배열), imageAlts(문자열 5개 배열), imageCaptions(문자열 5개 배열), imagePlacements(문자열 5개 배열). JSON 외 다른 설명, 마크다운 코드블록은 금지."
+  ].join("\n");
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),90000);
+  let lastError="응답 없음";
+  try{
+   for(const model of MODELS){
+    for(let attempt=0;attempt<2;attempt++){
+     try{
+      const response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.65,maxOutputTokens:3800,responseMimeType:"application/json"}}),signal:controller.signal});
+      const data=await response.json().catch(()=>({}));
+      if(response.ok){
+       const raw=data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("").trim()||"";
+       const result=JSON.parse(raw);
+       if(!result.title||!result.body)throw new Error("AI 결과에 제목 또는 본문이 없습니다.");
+       const arr=(v,n)=>Array.isArray(v)?v.map(x=>String(x||"").trim()).filter(Boolean).slice(0,n):[];
+       result.keywords=arr(result.keywords,3);result.imageQueries=arr(result.imageQueries,5);
+       result.imageAlts=arr(result.imageAlts,5);result.imageCaptions=arr(result.imageCaptions,5);result.imagePlacements=arr(result.imagePlacements,5);
+       while(result.keywords.length<3)result.keywords.push(product.title);
+       while(result.imageQueries.length<5)result.imageQueries.push(product.title+" product detail");
+       while(result.imageAlts.length<5)result.imageAlts.push(result.imageQueries[result.imageAlts.length]);
+       while(result.imageCaptions.length<5)result.imageCaptions.push(result.imageAlts[result.imageCaptions.length]);
+       while(result.imagePlacements.length<5)result.imagePlacements.push(["도입부 다음","제품 개요 뒤","주요 특징 설명 뒤","구매 전 확인 사항 근처","마무리 전"][result.imagePlacements.length]);
+       return res.json({...result,product:{title:product.title,brand:product.brand,price:product.price,currency:product.currency,description:product.description,url,images:product.images.slice(0,3)},model});
+      }
+      const message=data.error?.message||("Gemini 오류 "+response.status);lastError=model+" / "+response.status+" / "+message;
+      if([400,401,403].includes(response.status))return res.status(response.status).json({error:lastError});
+      if(![404,429,500,502,503,504].includes(response.status))return res.status(502).json({error:lastError});
+      if(attempt===0)await new Promise(resolve=>setTimeout(resolve,1200));else break;
+     }catch(e){if(e.name==="AbortError")throw e;lastError=e.message||String(e);if(attempt===0)await new Promise(resolve=>setTimeout(resolve,1000));else break;}
+    }
    }
-  }
-  return res.status(503).json({error:"기본 모델과 대체 모델이 모두 응답하지 않습니다. 잠시 후 다시 시도해 주세요. 마지막 오류: "+lastError});
- }catch(e){return res.status(502).json({error:e.name==="AbortError"?"글 생성 시간이 초과됐습니다. 다시 시도해 주세요.":e.message});}
- finally{clearTimeout(timer);}
+   return res.status(503).json({error:"기본 모델과 대체 모델이 모두 응답하지 않습니다. 잠시 후 다시 시도해 주세요. 마지막 오류: "+lastError});
+  }catch(e){return res.status(502).json({error:e.name==="AbortError"?"글 생성 시간이 초과됐습니다. 다시 시도해 주세요.":e.message});}
+  finally{clearTimeout(timer);}
+ }catch(e){return res.status(422).json({error:"상품 링크에서 정보를 가져오지 못했습니다: "+e.message});}
 });
 app.get("/api/status",(req,res)=>res.json({ok:true,aiConfigured:Boolean(process.env.GEMINI_API_KEY),models:MODELS,mode:"SEO 블로그 작성"}));
 app.listen(PORT,()=>console.log("Blog writer listening on "+PORT));
