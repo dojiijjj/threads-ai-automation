@@ -5,7 +5,7 @@ const path=require("path");
 const app=express();
 app.use(express.json({limit:"1mb"}));
 app.use(express.static(path.join(__dirname,"public")));
-const PORT=process.env.PORT||3000,MODEL="gemini-3.8-flash";
+const PORT=process.env.PORT||3000,MODELS=["gemini-3.6-flash","gemini-3.5-flash-lite","gemini-3.5-flash"];
 const clean=(v,n=3000)=>String(v||"").trim().slice(0,n);
 function urlOf(v){const m=String(v||"").match(/https?:\/\/[^\s<>"']+/i);if(!m)throw new Error("상품 URL을 입력해 주세요.");const u=new URL(m[0].replace(/[.,!?;:，。！？；：)\]}》〉」』】]+$/u,""));if(!["http:","https:"].includes(u.protocol)||u.username||u.password)throw new Error("올바른 상품 URL이 아닙니다.");return u.toString();}
 function privateIp(a){if(net.isIPv4(a)){const p=a.split(".").map(Number);return p[0]===0||p[0]===10||p[0]===127||(p[0]===169&&p[1]===254)||(p[0]===172&&p[1]>=16&&p[1]<=31)||(p[0]===192&&p[1]===168)||p[0]>=224;}if(net.isIPv6(a)){const x=a.toLowerCase();return x==="::"||x==="::1"||x.startsWith("fc")||x.startsWith("fd")||x.startsWith("fe8")||x.startsWith("fe9")||x.startsWith("fea")||x.startsWith("feb");}return true;}
@@ -14,6 +14,45 @@ async function fetchPage(raw,depth=0){const u=urlOf(raw);await checkHost(u);cons
 function decode(s){return String(s||"").replace(/&amp;/gi,"&").replace(/&quot;/gi,'"').replace(/&#39;|&apos;/gi,"'").replace(/&lt;/gi,"<").replace(/&gt;/gi,">").replace(/&#(\d+);/g,(_,n)=>String.fromCharCode(+n)).replace(/\s+/g," ").trim();}
 function meta(html,key){for(const tag of html.match(/<meta\b[^>]*>/gi)||[]){const a={};tag.replace(/([\w:-]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/g,(_,k,z,d,s,b)=>(a[k.toLowerCase()]=d??s??b,z));if((a.property||"").toLowerCase()===key||(a.name||"").toLowerCase()===key)return decode(a.content);}return "";}
 app.get("/api/preview",async(req,res)=>{try{const u=urlOf(req.query.url),h=await fetchPage(u),tm=h.match(/<title[^>]*>([\s\S]*?)<\/title>/i);const title=meta(h,"og:title")||meta(h,"twitter:title")||decode(tm?tm[1].replace(/<[^>]+>/g," "):"");const description=meta(h,"og:description")||meta(h,"description")||meta(h,"twitter:description");const imageRaw=meta(h,"og:image")||meta(h,"og:image:secure_url")||meta(h,"twitter:image");let image="";try{const x=new URL(imageRaw,u);if(["http:","https:"].includes(x.protocol))image=x.toString();}catch(_){}res.json({title:title.slice(0,300),description:description.slice(0,1500),image,url:u});}catch(e){res.status(422).json({error:e.message});}});
-app.post("/api/generate",async(req,res)=>{if(!process.env.GEMINI_API_KEY)return res.status(503).json({error:"Railway 환경변수 GEMINI_API_KEY가 필요합니다."});const title=clean(req.body.title,300),description=clean(req.body.description,2000),url=clean(req.body.url,2000),extra=clean(req.body.extra,2000);if(!title)return res.status(400).json({error:"상품 정보를 먼저 가져오거나 상품명을 입력해 주세요."});const prompt=["너는 한국어 티스토리 상품 소개 전문 블로거야. 아래 확인된 정보만 근거로 자연스럽고 읽기 쉬운 상품 소개 글을 작성해.","실제 사용 경험을 제공받지 않았으므로 직접 써봤다, 구매했다, 만족했다 같은 허위 체험담을 절대 쓰지 마. 친근하고 생생한 소개형 문체로 작성해.","상품명: "+title,"페이지 설명/확인 정보: "+description,"추가 메모: "+extra,"상품 URL: "+url,"구성: 검색에 적합한 제목 1개, 도입부, 주요 특징과 장점(확인된 내용만), 구매 전 확인할 점, 자연스러운 마무리.","본문은 700~1100자, 소제목 2~4개. 과장 광고, 검증되지 않은 효능, 가짜 가격/할인/평점은 금지. 링크와 제휴 고지는 임의로 만들지 마.","출력은 JSON 객체 하나: title과 body 필드."].join("\n");const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),65000);try{const r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+MODEL+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.7,maxOutputTokens:1800,responseMimeType:"application/json"}}),signal:controller.signal});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error?.message||"Gemini 요청 실패: "+r.status);const raw=d.candidates?.[0]?.content?.parts?.map(x=>x.text||"").join("").trim()||"";const parsed=JSON.parse(raw);if(!parsed.title||!parsed.body)throw new Error("AI 결과 형식이 올바르지 않습니다.");res.json({title:String(parsed.title),body:String(parsed.body),model:MODEL});}catch(e){res.status(502).json({error:e.name==="AbortError"?"글 생성 시간이 초과됐습니다.":e.message});}finally{clearTimeout(timer);}});
+app.post("/api/generate",async(req,res)=>{
+ if(!process.env.GEMINI_API_KEY)return res.status(503).json({error:"Railway 환경변수 GEMINI_API_KEY가 필요합니다."});
+ const title=clean(req.body.title,300),description=clean(req.body.description,2000),url=clean(req.body.url,2000),extra=clean(req.body.extra,2000);
+ if(!title)return res.status(400).json({error:"상품 정보를 먼저 가져오거나 상품명을 입력해 주세요."});
+ const prompt=["너는 한국어 티스토리 상품 소개 전문 블로거야. 아래 확인된 정보만 근거로 자연스럽고 읽기 쉬운 상품 소개 글을 작성해.","실제 사용 경험을 제공받지 않았으므로 직접 써봤다, 구매했다, 만족했다 같은 허위 체험담을 절대 쓰지 마. 친근하고 생생한 소개형 문체로 작성해.","상품명: "+title,"페이지 설명/확인 정보: "+description,"추가 메모: "+extra,"상품 URL: "+url,"구성: 검색에 적합한 제목 1개, 도입부, 주요 특징과 장점(확인된 내용만), 구매 전 확인할 점, 자연스러운 마무리.","본문은 700~1100자, 소제목 2~4개. 과장 광고, 검증되지 않은 효능, 가짜 가격/할인/평점은 금지. 링크와 제휴 고지는 임의로 만들지 마.","출력은 JSON 객체 하나: title과 body 필드."].join("\n");
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),65000);
+ let lastError="Gemini 응답을 받지 못했습니다.";
+ try{
+  for(const model of MODELS){
+   let nextModel=false;
+   for(let attempt=0;attempt<2;attempt++){
+    try{
+     const r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.7,maxOutputTokens:1800,responseMimeType:"application/json"}}),signal:controller.signal});
+     const d=await r.json().catch(()=>({}));
+     if(r.ok){
+      const raw=d.candidates?.[0]?.content?.parts?.map(x=>x.text||"").join("").trim()||"";
+      const parsed=JSON.parse(raw);
+      if(!parsed.title||!parsed.body)throw new Error("AI 결과 형식이 올바르지 않습니다.");
+      return res.json({title:String(parsed.title),body:String(parsed.body),model});
+     }
+     const detail=d.error?.message||("Gemini 요청 실패: "+r.status);
+     lastError=model+" ("+r.status+"): "+detail;
+     if(r.status===404){nextModel=true;break;}
+     if(r.status!==503&&r.status!==500)return res.status(502).json({error:lastError});
+     if(attempt===0)await new Promise(resolve=>setTimeout(resolve,1200));
+     else nextModel=true;
+    }catch(e){
+     if(e.name==="AbortError")throw e;
+     lastError=e.message||String(e);
+     if(attempt===0)await new Promise(resolve=>setTimeout(resolve,1200));
+     else nextModel=true;
+    }
+   }
+   if(!nextModel)break;
+  }
+  return res.status(503).json({error:"기본 모델과 대체 모델 모두 응답하지 않습니다. 잠시 후 다시 시도해 주세요. 마지막 오류: "+lastError});
+ }catch(e){
+  return res.status(502).json({error:e.name==="AbortError"?"글 생성 시간이 초과됐습니다. 다시 시도해 주세요.":e.message});
+ }finally{clearTimeout(timer);}
+});
 app.get("/api/status",(req,res)=>res.json({ok:true,aiConfigured:Boolean(process.env.GEMINI_API_KEY),mode:"Tistory 초안 작성"}));
 app.listen(PORT,()=>console.log("Tistory assistant listening on "+PORT));
