@@ -250,7 +250,7 @@ async function fetchGoogleNewsFeed(query) {
     });
     if (!response.ok) throw new Error("Google 뉴스 RSS 요청 실패 (" + response.status + ")");
     const xml = await response.text();
-    const blocks = xml.split("<item>").slice(1).map(part => part.split("</item>")[0]);
+    const blocks = Array.from(xml.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi), match => match[1]);
     return blocks.map(block => ({
       title: rssValue(block, "title"),
       description: rssValue(block, "description").slice(0, 700),
@@ -266,37 +266,103 @@ async function fetchGoogleNewsFeed(query) {
   }
 }
 
+async function fetchBingNewsFeed(query) {
+  const url = "https://www.bing.com/news/search?q=" + encodeURIComponent(query) +
+    "&format=rss&setlang=ko-KR&mkt=ko-KR";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; ThreadsInfoWriter/1.0)",
+        "Accept": "application/rss+xml, application/xml, text/xml"
+      }
+    });
+    if (!response.ok) throw new Error("Bing 뉴스 RSS 요청 실패 (" + response.status + ")");
+    const xml = await response.text();
+    const blocks = Array.from(xml.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi), match => match[1]);
+    return blocks.map(block => {
+      const rawLink = rssValue(block, "link");
+      let link = rawLink;
+      try {
+        const parsed = new URL(rawLink);
+        const target = parsed.searchParams.get("url") || parsed.searchParams.get("u");
+        if (target && /^https?:\/\//i.test(target)) link = target;
+      } catch (_) {}
+      return {
+        title: rssValue(block, "title"),
+        description: rssValue(block, "description").slice(0, 700),
+        source: rssValue(block, "source"),
+        link,
+        publishedAt: rssValue(block, "pubDate")
+      };
+    }).filter(item => item.title && item.link);
+  } catch (e) {
+    if (e.name === "AbortError") throw new Error("Bing 뉴스 검색 시간이 초과됐습니다.");
+    throw e;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function gatherEntertainmentNews() {
-  const queries = ["연예 when:1d", "배우 가수 아이돌 드라마 영화 when:1d"];
-  const feeds = await Promise.allSettled(queries.map(query => fetchGoogleNewsFeed(query)));
-  const seen = new Set();
+  const googleQueries = ["연예 뉴스", "한국 연예계 배우 가수 아이돌", "K-pop 연예"];
+  const bingQueries = ["한국 연예 뉴스", "연예계 배우 가수 아이돌", "K-pop 한국"];
+  const requests = [
+    ...googleQueries.map(query => fetchGoogleNewsFeed(query)),
+    ...bingQueries.map(query => fetchBingNewsFeed(query))
+  ];
+  const results = await Promise.allSettled(requests);
   const items = [];
-  for (const result of feeds) {
+  const seen = new Set();
+  for (const result of results) {
     if (result.status !== "fulfilled") continue;
     for (const item of result.value) {
-      const key = item.title.replace(/\s+/g, "").toLowerCase();
-      if (!key || seen.has(key)) continue;
+      const key = String(item.title || "").replace(/\s+/g, "").toLowerCase();
+      if (!key || seen.has(key) || !item.link) continue;
       seen.add(key);
       items.push(item);
     }
   }
-  items.sort((a, b) => (Date.parse(b.publishedAt) || 0) - (Date.parse(a.publishedAt) || 0));
-  for (const item of items.slice(0, 12)) {
-    if (!item.link) continue;
+
+  const now = Date.now();
+  const recent = items.filter(item => {
+    const published = Date.parse(item.publishedAt || "");
+    return !Number.isFinite(published) || (published <= now + 60 * 60 * 1000 && published >= now - 5 * 24 * 60 * 60 * 1000);
+  });
+  const ordered = (recent.length ? recent : items).sort((a, b) =>
+    (Date.parse(b.publishedAt || "") || 0) - (Date.parse(a.publishedAt || "") || 0)
+  );
+
+  for (const item of ordered.slice(0, 18)) {
     try {
       const html = await fetchPublicHtml(item.link);
-      const rawImage = htmlMeta(html, "og:image") || htmlMeta(html, "og:image:secure_url") || htmlMeta(html, "twitter:image");
+      const rawImage = htmlMeta(html, "og:image") ||
+        htmlMeta(html, "og:image:secure_url") ||
+        htmlMeta(html, "twitter:image");
       if (!rawImage) continue;
       const imageUrl = new URL(rawImage, item.link);
       if (!["http:", "https:"].includes(imageUrl.protocol) || imageUrl.username || imageUrl.password) continue;
       const imageData = await fetchPublicImage(imageUrl.toString());
       if (!["image/jpeg", "image/png"].includes(imageData.type)) continue;
-      return { title: item.title.slice(0, 300), description: item.description.slice(0, 700), source: item.source || "", link: item.link, publishedAt: item.publishedAt || "", image: imageUrl.toString() };
+      const title = htmlMeta(html, "og:title") || htmlMeta(html, "twitter:title") || item.title;
+      const description = htmlMeta(html, "og:description") || htmlMeta(html, "description") || item.description;
+      return {
+        title: title.replace(/\s+/g, " ").trim().slice(0, 300),
+        description: String(description || "").slice(0, 700),
+        source: item.source || "",
+        link: item.link,
+        publishedAt: item.publishedAt || "",
+        image: imageUrl.toString()
+      };
     } catch (_) {}
   }
-  throw new Error(items.length
-    ? "최신 연예 기사는 찾았지만 게시물에 첨부할 대표 사진을 찾지 못했습니다. 잠시 후 다시 시도해 주세요."
-    : "최신 연예계 뉴스 검색 결과가 없습니다. 잠시 후 다시 시도해 주세요.");
+
+  if (!items.length) {
+    throw new Error("Google·Bing 뉴스 검색 결과를 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+  }
+  throw new Error("최신 연예 기사는 찾았지만 게시물에 첨부할 JPG·PNG 대표 사진을 확인하지 못했습니다.");
 }
 
 async function gatherNewsResearch(topic, todayIssue) {
