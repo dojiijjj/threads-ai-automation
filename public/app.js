@@ -75,6 +75,7 @@
         shownTime = Number.isNaN(parsed.getTime()) ? '' : parsed.toLocaleString();
       }
       addText(box, 'span', 'pill', '[' + categoryLabel(item.category || 'daily') + '] ' + (item.status || '') + (shownTime ? ' · ' + shownTime : ''));
+      if (item.commentStatus) addText(box, 'span', 'pill', ' · 첫 댓글: ' + item.commentStatus);
       addText(box, 'p', '', item.text || '');
       if (view === 'scheduled' && item.status === '예약 대기') {
         const cancel = document.createElement('button');
@@ -164,7 +165,8 @@
         })
       });
       $('post').value = result.text || '';
-      message((result.mode || 'AI') + ' 글 생성 완료. 링크와 제휴 고지 문구까지 넣었어요. 게시 전 내용을 확인해 주세요.');
+      $('comment').value = result.commentText || '';
+      message((result.mode || 'AI') + ' 게시글과 첫 댓글을 생성했습니다. 각각 내용을 확인해 주세요.');
     } catch (err) {
       message('글 생성 실패: ' + errorText(err));
     } finally {
@@ -185,6 +187,19 @@
     }
   });
 
+  $('copyComment').addEventListener('click', async () => {
+    const text = $('comment').value.trim();
+    if (!text) { message('복사할 첫 댓글이 없습니다.'); return; }
+    try {
+      await navigator.clipboard.writeText(text);
+      message('첫 댓글을 복사했습니다.');
+    } catch (_) {
+      $('comment').focus();
+      $('comment').select();
+      message('첫 댓글을 선택했습니다. 복사를 눌러 복사해 주세요.');
+    }
+  });
+
   $('publish').addEventListener('click', async () => {
     const text = $('post').value.trim();
     if (!text) { message('게시할 내용을 먼저 작성해 주세요.'); $('post').focus(); return; }
@@ -192,13 +207,21 @@
     button.disabled = true;
     message('Threads에 게시 중...');
     try {
-      await api('/api/publish', {
+      const result = await api('/api/publish', {
         method: 'POST',
-        body: JSON.stringify({ text, category: currentCategory })
+        body: JSON.stringify({ text, commentText: $('comment').value.trim(), category: currentCategory })
       });
       $('post').value = '';
+      if (result.commentPosted) {
+        $('comment').value = '';
+        message('게시글과 첫 댓글 등록 완료.');
+      } else if (result.commentError) {
+        message('게시글은 등록됐지만 첫 댓글 등록은 실패했어요: ' + result.commentError);
+      } else {
+        $('comment').value = '';
+        message('게시글 등록 완료.');
+      }
       view = 'posts';
-      message('게시 완료.');
       await refresh();
     } catch (err) {
       message('게시 실패: ' + errorText(err));
@@ -220,9 +243,9 @@
     try {
       await api('/api/schedule', {
         method: 'POST',
-        body: JSON.stringify({ text, at: $('when').value, category: currentCategory })
+        body: JSON.stringify({ text, commentText: $('comment').value.trim(), at: $('when').value, category: currentCategory })
       });
-      message(categoryLabel(currentCategory) + ' 유형 예약 등록 완료.');
+      message(categoryLabel(currentCategory) + ' 게시글과 첫 댓글 예약 등록 완료.');
       $('scheduleBox').classList.add('hidden');
       view = 'scheduled';
       await refresh();
