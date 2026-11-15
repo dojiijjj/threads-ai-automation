@@ -289,6 +289,8 @@ async function gatherEntertainmentNews() {
       if (!rawImage) continue;
       const imageUrl = new URL(rawImage, item.link);
       if (!["http:", "https:"].includes(imageUrl.protocol) || imageUrl.username || imageUrl.password) continue;
+      const imageData = await fetchPublicImage(imageUrl.toString());
+      if (!["image/jpeg", "image/png"].includes(imageData.type)) continue;
       return { title: item.title.slice(0, 300), description: item.description.slice(0, 700), source: item.source || "", link: item.link, publishedAt: item.publishedAt || "", image: imageUrl.toString() };
     } catch (_) {}
   }
@@ -733,6 +735,9 @@ app.post("/api/generate", async (req, res) => {
     }
   }
 
+  if (entertainmentNews && !generated.trim().startsWith(entertainmentTitle)) {
+    generated = entertainmentTitle + "\\n" + generated.trim();
+  }
   generated = exactlyTwoParagraphs(generated);
 
   const commentParts = [];
