@@ -2,8 +2,8 @@ name: Refresh Threads access token
 
 on:
   schedule:
-    # Weekly at 03:00 Korea time every Monday (18:00 UTC every Sunday).
-    - cron: "0 18 * * 0"
+    # Weekly at 03:00 Korea time every Sunday (18:00 UTC every Saturday).
+    - cron: "0 18 * * 6"
   workflow_dispatch:
 
 permissions:
