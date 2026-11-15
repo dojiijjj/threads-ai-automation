@@ -8,6 +8,10 @@
 
   function message(value) { $('message').textContent = value; }
   function errorText(err) { return err && err.message ? err.message : String(err); }
+  function extractHttpUrl(value) {
+    const match = String(value || '').match(/https?:\/\/[^\s<>"'`]+/i);
+    return match ? match[0].replace(/[.,!?;:，。！？；：)\]}》〉」』】]+$/u, '') : '';
+  }
   function categoryLabel(value) {
     return value === 'toss' ? '토스' : value === 'coupang' ? '쿠팡' : '일상';
   }
@@ -44,13 +48,11 @@
     currentCategory = $('category').value;
     const isAffiliate = currentCategory !== 'daily';
     $('affiliateWrap').classList.toggle('hidden', !isAffiliate);
-    $('alternateWrap').classList.toggle('hidden', !isAffiliate);
     $('linkPreview').classList.toggle('hidden', !isAffiliate);
     $('topicLabel').textContent = isAffiliate ? '상품명' : '게시글 주제';
-    $('topic').placeholder = isAffiliate ? '예: 무선 청소기, 텀블러' : '예: 오늘 있었던 일, 관심 있는 이야기';
-    $('affiliateLabel').textContent = currentCategory === 'toss' ? '토스 쉐어링크' : '쿠팡 파트너스 링크';
-    $('alternateLabel').textContent = currentCategory === 'toss' ? '함께 넣을 쿠팡 링크 (선택)' : '함께 넣을 토스 링크 (선택)';
-    $('linkHelp').textContent = '제휴 플랫폼에서 직접 복사한 내 링크를 붙여 넣으세요. 토스 API 연결은 필요하지 않습니다.';
+    $('topic').placeholder = isAffiliate ? '링크 미리보기에서 자동으로 채워집니다. 필요하면 직접 입력하세요.' : '예: 오늘 있었던 일, 관심 있는 이야기';
+    $('affiliateLabel').textContent = '토스 쉐어링크';
+    $('linkHelp').textContent = '링크 앞뒤에 설명이나 다른 글자가 있어도 괜찮아요. 입력 내용에서 https:// 링크를 자동으로 찾아냅니다. 토스 API 연결은 필요하지 않습니다.';
     linkInfo = null;
     $('linkInfo').textContent = '';
   }
@@ -118,8 +120,8 @@
   $('category').addEventListener('change', updateCategoryFields);
 
   $('linkPreview').addEventListener('click', async () => {
-    const url = $('affiliateLink').value.trim();
-    if (!url) { message('먼저 제휴 링크를 붙여 넣어 주세요.'); $('affiliateLink').focus(); return; }
+    const url = extractHttpUrl($('affiliateLink').value);
+    if (!url) { message('입력한 내용에서 https:// 또는 http:// 링크를 찾지 못했어요.'); $('affiliateLink').focus(); return; }
     const button = $('linkPreview');
     button.disabled = true;
     $('linkInfo').textContent = '상품 페이지 정보를 읽는 중...';
@@ -131,7 +133,7 @@
       message('링크 정보 확인 완료. 상품명과 설명을 확인해 주세요.');
     } catch (err) {
       linkInfo = null;
-      $('linkInfo').textContent = '자동으로 읽지 못했습니다. 상품명과 특징을 직접 입력하면 계속 진행할 수 있어요.';
+      $('linkInfo').textContent = '자동으로 읽지 못했습니다. 상품명을 직접 입력해 주세요. 링크는 게시글에 그대로 넣을 수 있어요.';
       message('링크 미리보기: ' + errorText(err));
     } finally {
       button.disabled = false;
@@ -156,10 +158,8 @@
           category: currentCategory,
           topic,
           productName: topic,
-          details: $('details').value.trim(),
           tone: $('tone').value,
-          affiliateLink: $('affiliateLink').value.trim(),
-          alternateLink: $('alternateLink').value.trim(),
+          affiliateLink: $('affiliateLink').value,
           linkInfo
         })
       });
