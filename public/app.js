@@ -277,6 +277,28 @@
     }
   });
 
+
+  $('checkReply').addEventListener('click', async () => {
+    const button = $('checkReply');
+    button.disabled = true;
+    message('댓글 발행 권한 확인 중...');
+    try {
+      const result = await api('/api/reply-status');
+      if (result.canReply) {
+        const quota = result.replyQuotaTotal
+          ? ' · 남은 한도 ' + Math.max(0, result.replyQuotaTotal - result.replyQuotaUsed) + '/' + result.replyQuotaTotal
+          : '';
+        message('댓글 발행 권한 확인 완료 (@' + (result.username || '') + ')' + quota);
+      } else {
+        message('댓글 발행 권한 확인 실패: ' + (result.error || '권한을 확인할 수 없습니다.'));
+      }
+    } catch (err) {
+      message('댓글 권한 확인 실패: ' + errorText(err));
+    } finally {
+      button.disabled = false;
+    }
+  });
+
   $('historyTab').addEventListener('click', () => { view = 'posts'; render(); });
   $('scheduledTab').addEventListener('click', () => { view = 'scheduled'; render(); });
 
