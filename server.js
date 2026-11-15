@@ -222,6 +222,94 @@ function decodeHtml(value) {
     .replace(/\s+/g, " ").trim();
 }
 
+
+function rssValue(block, tag) {
+  const match = block.match(new RegExp("<" + tag + "(?:\\s[^>]*)?>([\\s\\S]*?)<\\/" + tag + ">", "i"));
+  if (!match) return "";
+  return decodeHtml(match[1]
+    .replace(/^<!\\[CDATA\\[/, "")
+    .replace(/\\]\\]>$/, "")
+    .replace(/<[^>]*>/g, " "));
+}
+
+async function fetchGoogleNewsFeed(query) {
+  const url = query
+    ? "https://news.google.com/rss/search?q=" + encodeURIComponent(query) + "&hl=ko&gl=KR&ceid=KR:ko"
+    : "https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; ThreadsInfoWriter/1.0)",
+        "Accept": "application/rss+xml, application/xml, text/xml"
+      }
+    });
+    if (!response.ok) throw new Error("Google 뉴스 RSS 요청 실패 (" + response.status + ")");
+    const xml = await response.text();
+    return (xml.match(/<item(?:\\s[^>]*)?>[\\s\\S]*?<\\/item>/gi) || []).map((block) => ({
+      title: rssValue(block, "title"),
+      description: rssValue(block, "description").slice(0, 700),
+      source: rssValue(block, "source"),
+      link: rssValue(block, "link"),
+      publishedAt: rssValue(block, "pubDate")
+    })).filter(item => item.title);
+  } catch (e) {
+    if (e.name === "AbortError") throw new Error("뉴스 검색 시간이 초과됐습니다.");
+    throw e;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function gatherNewsResearch(topic, todayIssue) {
+  const queries = todayIssue
+    ? [null, "대한민국 주요 뉴스 when:1d", "사건 사고 when:1d", "사회 이슈 when:1d"]
+    : [topic, topic + " 사건 최신"];
+  const results = await Promise.allSettled(queries.map(query => fetchGoogleNewsFeed(query)));
+  const items = [];
+  for (const result of results) {
+    if (result.status === "fulfilled") items.push(...result.value);
+  }
+  const seen = new Set();
+  const unique = items.filter(item => {
+    const key = item.title.replace(/\\s+/g, "").toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const start = new Date(seoulDayTimeRange().startTime).getTime();
+  const todayItems = todayIssue
+    ? unique.filter(item => {
+        const time = Date.parse(item.publishedAt);
+        return Number.isFinite(time) && time >= start;
+      })
+    : unique;
+  const selected = (todayItems.length ? todayItems : unique).slice(0, 14);
+  if (!selected.length) {
+    throw new Error(todayIssue
+      ? "오늘 확인할 수 있는 뉴스 검색 결과가 없습니다. 잠시 후 다시 시도해 주세요."
+      : "해당 키워드의 뉴스 검색 결과가 없습니다. 다른 표현으로 다시 입력해 주세요.");
+  }
+  return selected;
+}
+
+function formatNewsResearch(items) {
+  return items.map((item, index) => {
+    const date = item.publishedAt ? new Date(item.publishedAt) : null;
+    const time = date && !Number.isNaN(date.getTime())
+      ? date.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })
+      : "보도 시각 미확인";
+    return [
+      (index + 1) + ". " + item.title,
+      "언론사: " + (item.source || "출처 표기 없음"),
+      "보도 시각: " + time,
+      item.description ? "RSS 요약: " + item.description : ""
+    ].filter(Boolean).join("\n");
+  }).join("\n\n");
+}
+
 function htmlMeta(html, key) {
   const tags = html.match(/<meta\b[^>]*>/gi) || [];
   for (const tag of tags) {
