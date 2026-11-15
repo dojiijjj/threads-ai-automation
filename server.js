@@ -46,10 +46,20 @@ function cleanText(value, max = 2000) {
   return String(value || "").trim().slice(0, max);
 }
 
+// 설명 문장이나 다른 글자와 함께 붙여 넣어도 첫 번째 http(s) URL만 추출합니다.
+function extractHttpUrl(value) {
+  const text = String(value || "").trim();
+  const match = text.match(/https?:\/\/[^\s<>"'`]+/i);
+  if (!match) return "";
+  return match[0].replace(/[.,!?;:，。！？；：)\]}》〉」』】]+$/u, "");
+}
+
 function validateHttpUrl(value) {
   if (!value) return "";
+  const extracted = extractHttpUrl(value);
+  if (!extracted) throw new Error("입력한 내용에서 http:// 또는 https:// 링크를 찾지 못했습니다.");
   let url;
-  try { url = new URL(value); } catch (_) { throw new Error("링크 주소를 https:// 또는 http://부터 정확히 입력해 주세요."); }
+  try { url = new URL(extracted); } catch (_) { throw new Error("링크 주소를 다시 확인해 주세요."); }
   if (!["http:", "https:"].includes(url.protocol)) throw new Error("http 또는 https 링크만 사용할 수 있습니다.");
   if (url.username || url.password) throw new Error("아이디나 비밀번호가 포함된 링크는 사용할 수 없습니다.");
   return url.toString();
@@ -218,16 +228,13 @@ app.get("/api/status", async (req, res) => {
 app.get("/api/posts", (req, res) => res.json({ posts: store.posts, scheduled: store.scheduled }));
 
 app.post("/api/generate", async (req, res) => {
-  const category = ["toss", "coupang", "daily"].includes(req.body.category) ? req.body.category : "daily";
+  const category = ["toss", "daily"].includes(req.body.category) ? req.body.category : "daily";
   const topic = cleanText(req.body.topic, 300);
   const productName = cleanText(req.body.productName, 240);
-  const details = cleanText(req.body.details, 1400);
-  const tone = cleanText(req.body.tone || "친근한", 60);
+  const tone = cleanText(req.body.tone || "생활형 후기형", 60);
   let affiliateLink = "";
-  let alternateLink = "";
   try {
     affiliateLink = validateHttpUrl(cleanText(req.body.affiliateLink, 2000));
-    alternateLink = validateHttpUrl(cleanText(req.body.alternateLink, 2000));
   } catch (e) {
     return res.status(400).json({ error: e.message });
   }
@@ -242,18 +249,22 @@ app.post("/api/generate", async (req, res) => {
   const pageTitle = cleanText(linkInfo.title, 240);
   const pageDescription = cleanText(linkInfo.description, 700);
   const prompt = [
-    "한국어 Threads(스레드) 제휴 마케팅 게시글을 작성해.",
-    "상품 또는 주제: " + subject,
+    "한국어 Threads(스레드)에 올릴 상품 소개 글을 작성해.",
+    "상품명 또는 주제: " + subject,
     pageTitle ? "링크 페이지 제목: " + pageTitle : "",
     pageDescription ? "링크 페이지 설명: " + pageDescription : "",
-    details ? "사용자가 제공한 상품 특징과 참고 정보: " + details : "",
-    "게시물 유형: " + (category === "toss" ? "토스 쇼핑 쉐어링크 소개" : category === "coupang" ? "쿠팡 파트너스 상품 소개" : "일상/정보 게시글"),
-    "말투: " + tone,
-    "첫 문장은 스크롤을 멈추게 하는 자연스러운 후킹 문장으로 시작해.",
-    "짧은 문단과 자연스러운 줄바꿈을 사용하고, 광고 티가 과도하게 나지 않도록 실제 사용자가 쓴 듯 담백하게 작성해.",
-    "상품의 가격, 할인율, 배송, 성능, 재고, 수수료, 구매 후기, 사용 경험, 24시간 추적 여부는 입력된 정보에 없는 한 절대 만들어내지 마.",
-    "직접 사용해 봤다고 거짓말하지 마. 과장된 수익 보장이나 구매 압박도 하지 마.",
-    "3~6문장 정도로 작성하고, 링크와 제휴 고지 문구는 시스템이 뒤에 붙이므로 본문에 URL이나 고지 문구를 쓰지 마.",
+    "게시물 유형: " + (category === "toss" ? "토스 쉐어링크 상품 소개" : "일상/정보 게시글"),
+    "말투 설정: " + tone,
+    "핵심 말투는 친구에게 수다 떨듯 편하고 생생한 생활형 후기 스타일이야. 딱딱한 광고 문구나 쇼핑몰 상세페이지 말투는 쓰지 마.",
+    "예시의 문체 특징을 적용해: '이런 거 숨겨두는 게 국룰인 거 알지? ㅋㅋ'처럼 일상 공감으로 시작하고, 상품을 발견한 순간의 반응을 자연스럽게 말한 다음, 확인된 특징을 감각적이고 구체적인 표현으로 풀어줘.",
+    "짧은 문장과 줄바꿈으로 리듬을 만들고, 중간중간 '진짜 요물임', '장난 아님', '나도 모르게 눈길 감', 'ㅠㅠ', 'ㅋㅋ' 같은 구어체 반응을 과하지 않게 섞어줘.",
+    "마무리는 친구에게 이야기하듯 가벼운 농담이나 솔직한 한마디로 끝내. 이모티콘과 느낌표를 연달아 남발하지 마.",
+    "첫 줄은 스크롤을 멈추게 하는 후킹 문장으로 쓰고, 전체는 예시처럼 자연스럽게 이어지는 4~7개의 짧은 문장 또는 문단으로 작성해.",
+    "상품명, 기능, 용량, 소재, 구성, 가격, 할인, 배송, 재고 등은 링크 페이지에서 확인된 내용만 사용해. 확인되지 않은 구체 정보는 만들지 마.",
+    "사용자가 실제 사용 경험을 제공하지 않았다면 구매하거나 먹어 봤다고 거짓말하지 마. 가족이나 남편의 반응, 직접 사용한 에피소드도 지어내지 말고, '발견했는데', '이런 제품 찾는 분들 참고'처럼 소개형으로 자연스럽게 써.",
+    "수익 보장, 과장된 효능, 검증되지 않은 24시간 추적·수수료 주장은 넣지 마.",
+    "링크와 제휴 고지 문구는 시스템이 뒤에 자동으로 붙이므로 본문에는 URL이나 고지 문구를 쓰지 마.",
+    "광고라는 사실을 숨기려 하지 말고, 자연스러운 추천 문체로만 작성해.",
     "게시글 본문만 출력해."
   ].filter(Boolean).join("\n");
 
@@ -300,14 +311,7 @@ app.post("/api/generate", async (req, res) => {
   const output = [generated.trim()];
   if (category === "toss") {
     output.push("토스에서 상품 확인하기\n" + affiliateLink);
-    if (alternateLink) output.push("다른 쇼핑 링크로 비교하기\n" + alternateLink);
     output.push(DISCLOSURES.toss);
-  } else if (category === "coupang") {
-    output.push("쿠팡에서 상품 확인하기\n" + affiliateLink);
-    if (alternateLink) output.push("토스에서도 확인하기\n" + alternateLink);
-    output.push(DISCLOSURES.coupang);
-  } else if (affiliateLink) {
-    output.push("관련 링크\n" + affiliateLink);
   }
 
   res.json({
@@ -315,13 +319,13 @@ app.post("/api/generate", async (req, res) => {
     mode,
     category,
     productName: subject,
-    links: { affiliateLink, alternateLink }
+    links: { affiliateLink }
   });
 });
 
 app.post("/api/publish", async (req, res) => {
   const text = cleanText(req.body.text, 5000);
-  const category = ["toss", "coupang", "daily"].includes(req.body.category) ? req.body.category : "daily";
+  const category = ["toss", "daily"].includes(req.body.category) ? req.body.category : "daily";
   if (!text) return res.status(400).json({ error: "게시글 내용을 입력해 주세요." });
   try {
     const result = await publish(text);
@@ -337,7 +341,7 @@ app.post("/api/publish", async (req, res) => {
 
 app.post("/api/schedule", (req, res) => {
   const text = cleanText(req.body.text, 5000);
-  const category = ["toss", "coupang", "daily"].includes(req.body.category) ? req.body.category : "daily";
+  const category = ["toss", "daily"].includes(req.body.category) ? req.body.category : "daily";
   const at = new Date(req.body.at);
   if (!text) return res.status(400).json({ error: "게시글 내용을 먼저 작성해 주세요." });
   if (Number.isNaN(at.getTime()) || at.getTime() <= Date.now()) return res.status(400).json({ error: "미래 시간을 선택해 주세요." });
