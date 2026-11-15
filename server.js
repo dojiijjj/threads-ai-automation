@@ -538,6 +538,179 @@ app.get("/api/reply-status", async (req, res) => {
 app.get("/api/posts", (req, res) => res.json({ posts: store.posts, scheduled: store.scheduled }));
 
 
+
+
+const COMMUNITY_SOURCES = [
+  { id: "fmkorea", name: "에펨코리아", hosts: ["fmkorea.com"], urls: ["https://www.fmkorea.com/best", "https://mogle.site/c/fmkorea/"] },
+  { id: "dcinside", name: "디시인사이드", hosts: ["dcinside.com"], urls: ["https://gall.dcinside.com/board/lists?id=dcbest"] },
+  { id: "ruliweb", name: "루리웹", hosts: ["ruliweb.com"], urls: ["https://bbs.ruliweb.com/best/all/now"] },
+  { id: "humoruniv", name: "웃긴대학", hosts: ["humoruniv.com"], urls: ["https://web.humoruniv.com/board/humor/list.html?table=pds", "https://mogle.site/c/humoruniv/"] },
+  { id: "theqoo", name: "더쿠", hosts: ["theqoo.net"], urls: ["https://theqoo.net/hot"] }
+];
+
+function stripCommunityHtml(value) {
+  return decodeHtml(String(value || "")
+    .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<(br|\/p|\/div|\/li|\/tr|\/h[1-6])\b[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, " "))
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n\s*\n+/g, "\n")
+    .trim();
+}
+
+function extractCommunityAnchors(html, source) {
+  const matches = String(html || "").match(/<a\b[^>]*>[\s\S]*?<\/a>/gi) || [];
+  const found = [];
+  const seen = new Set();
+  for (const tag of matches) {
+    const hrefMatch = tag.match(/\bhref\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))/i);
+    if (!hrefMatch) continue;
+    const href = hrefMatch[1] || hrefMatch[2] || hrefMatch[3] || "";
+    let url;
+    try { url = new URL(decodeHtml(href), source.listUrl); } catch (_) { continue; }
+    if (!["http:", "https:"].includes(url.protocol) || !source.hosts.some(host => url.hostname === host || url.hostname.endsWith("." + host))) continue;
+    const title = stripCommunityHtml(tag).replace(/\s+/g, " ").trim();
+    if (title.length < 5 || title.length > 180) continue;
+    const pathKey = url.origin + url.pathname + url.search;
+    if (seen.has(pathKey)) continue;
+    seen.add(pathKey);
+    if (/로그인|회원가입|공지사항|이용안내|전체글|베스트 더보기|게시판찾기/i.test(title)) continue;
+    if (source.id === "dcinside" && !/\/board\/view/i.test(url.pathname)) continue;
+    if (source.id === "ruliweb" && !/\/community\/board\/|\/best\//i.test(url.pathname)) continue;
+    if (source.id === "theqoo" && !/\/\d{4,}/.test(url.pathname)) continue;
+    if (source.id === "fmkorea" && !(/\/\d{5,}/.test(url.pathname) || /document_srl=/.test(url.search))) continue;
+    if (source.id === "humoruniv" && !/(read|view|number=)/i.test(url.href)) continue;
+    found.push({ title, url: url.toString(), source: source.name, sourceId: source.id });
+    if (found.length >= 12) break;
+  }
+  return found;
+}
+
+async function fetchCommunityStoriesForSource(source) {
+  let lastError = "";
+  for (const listUrl of source.urls) {
+    try {
+      const html = await fetchPublicHtml(listUrl);
+      const stories = extractCommunityAnchors(html, { ...source, listUrl });
+      if (stories.length) return stories;
+      lastError = "인기글 목록에서 게시글을 찾지 못했습니다.";
+    } catch (e) {
+      lastError = e.message || "페이지를 읽지 못했습니다.";
+    }
+  }
+  throw new Error(lastError || "수집할 수 있는 공개 목록이 없습니다.");
+}
+
+app.get("/api/community-stories", async (req, res) => {
+  const results = await Promise.all(COMMUNITY_SOURCES.map(async source => {
+    try {
+      const stories = await fetchCommunityStoriesForSource(source);
+      return { source: source.name, sourceId: source.id, ok: true, stories };
+    } catch (e) {
+      return { source: source.name, sourceId: source.id, ok: false, error: e.message };
+    }
+  }));
+  const stories = results.flatMap(item => item.stories || []);
+  res.json({
+    ok: stories.length > 0,
+    stories,
+    sources: results.map(({ source, ok, error }) => ({ source, ok, error: error || "" })),
+    fetchedAt: new Date().toISOString()
+  });
+});
+
+function extractCommunityArticleText(html, sourceId) {
+  const selectors = {
+    dcinside: ["write_div", "gallview_contents", "view_content"],
+    fmkorea: ["xe_content", "document_"],
+    ruliweb: ["view_content", "community_view", "article_content"],
+    humoruniv: ["view_content", "content"],
+    theqoo: ["xe_content", "rd_body", "article"]
+  }[sourceId] || ["article", "content", "view_content"];
+  for (const selector of selectors) {
+    const pattern = new RegExp("<([a-z0-9]+)\\\\b[^>]*class=[\\"'][^\\"']*(?:" + selector + ")[^\\"']*[\\"'][^>]*>([\\\\s\\\\S]*?)<\\\\/\\\\1>", "i");
+    const match = html.match(pattern);
+    if (match && match[2]) {
+      const text = stripCommunityHtml(match[2]);
+      if (text.length > 80) return text.slice(0, 6000);
+    }
+  }
+  const description = htmlMeta(html, "og:description") || htmlMeta(html, "description");
+  if (description && description.length > 80) return description.slice(0, 4000);
+  const bodyMatch = html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i);
+  return stripCommunityHtml(bodyMatch ? bodyMatch[1] : html).slice(0, 6000);
+}
+
+app.post("/api/community-story-generate", async (req, res) => {
+  if (!process.env.GEMINI_API_KEY) {
+    return res.status(503).json({ error: "커뮤니티 썰 재작성에는 GEMINI_API_KEY가 필요합니다." });
+  }
+  const sourceId = cleanText(req.body.sourceId, 30);
+  const source = COMMUNITY_SOURCES.find(item => item.id === sourceId);
+  const title = cleanText(req.body.title, 240);
+  const rawUrl = cleanText(req.body.url, 2000);
+  if (!source || !title || !rawUrl) return res.status(400).json({ error: "선택한 썰 정보를 확인해 주세요." });
+  let articleUrl;
+  try {
+    articleUrl = validateHttpUrl(rawUrl);
+    const host = new URL(articleUrl).hostname.toLowerCase();
+    if (!source.hosts.some(item => host === item || host.endsWith("." + item))) {
+      throw new Error("선택한 커뮤니티의 게시글 주소가 아닙니다.");
+    }
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+
+  try {
+    const html = await fetchPublicHtml(articleUrl);
+    const articleText = extractCommunityArticleText(html, sourceId);
+    if (!articleText || articleText.length < 60) {
+      return res.status(422).json({ error: "게시글 본문을 읽지 못했습니다. 다른 인기글을 선택해 주세요." });
+    }
+    const prompt = [
+      "너는 대한민국 Threads 전문 썰 카피라이터야. 아래 커뮤니티 게시글을 바탕으로 몰입감 있는 1인칭 썰로 재구성해.",
+      "원문 작성자의 시점과 사건 흐름을 유지해. 제3자 요약이 아니라 사연의 주인공이 직접 말하는 듯한 1인칭 서술로 바꿔.",
+      "단, 사용자가 실제로 겪은 일이라고 주장하거나 사용자의 신상·경험을 지어내지 말고, 원문 속 화자의 이야기로만 재구성해.",
+      "원문에 없는 사건, 대사, 인물 관계, 감정, 결말, 숫자, 장소는 만들지 마. 세부 정보가 부족하면 있는 내용만으로 자연스럽게 써.",
+      "원문이 사실 확인되지 않은 주장이나 소문이면 사실처럼 단정하지 말고, 원문에서 주장하는 내용이라는 점을 유지해.",
+      "실명, 연락처, 계정명, 학교·직장 등 개인을 특정할 수 있는 정보와 모욕·혐오 표현은 빼거나 일반화해.",
+      "원문을 문장 단위로 복사하지 말고 전개와 핵심만 살려 새 문장으로 작성해.",
+      "말투는 친구에게 직접 이야기하듯 편한 한국어 반말. 짧은 문장, 자연스러운 줄바꿈, 적절한 ㅋㅋ/ㅠㅠ. 기사체와 딱딱한 요약체는 금지.",
+      "반드시 정확히 2단락, 각 단락은 줄바꿈 기준 최대 3줄. 두 단락 사이 빈 줄 하나. 제목, 번호, 소제목, 출처, URL, 출처 안내는 출력하지 마.",
+      "첫 단락은 강한 후킹으로 사건의 시작을 보여주고, 두 번째 단락은 핵심 전개와 반전 또는 여운으로 끝내.",
+      "게시글 제목: " + title,
+      "원문 커뮤니티: " + source.name,
+      "원문 내용:\n" + articleText
+    ].join("\n\n");
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+    try {
+      const url = "https://generativelanguage.googleapis.com/v1beta/models/" + GEMINI_MODEL + ":generateContent";
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 620, temperature: 0.75 }
+        }),
+        signal: controller.signal
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error?.message || "Gemini 요청 실패 (" + response.status + ")");
+      const generated = data.candidates?.[0]?.content?.parts?.map(part => part.text || "").join("").trim() || "";
+      if (!generated) throw new Error("AI가 썰을 생성하지 못했습니다.");
+      res.json({ ok: true, text: exactlyTwoParagraphs(generated), source: source.name, title });
+    } finally {
+      clearTimeout(timeout);
+    }
+  } catch (e) {
+    res.status(502).json({ error: e.name === "AbortError" ? "썰 생성 시간이 초과됐습니다." : "썰 생성 실패: " + e.message });
+  }
+});
+
 app.post("/api/generate", async (req, res) => {
   const category = ["toss", "daily"].includes(req.body.category) ? req.body.category : "daily";
   const topic = cleanText(req.body.topic, 300);
