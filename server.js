@@ -6,6 +6,8 @@ app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, "data.json");
+const GEMINI_MODEL = "gemini-3.5-flash-lite";
+const GEMINI_TIMEOUT_MS = 25000;
 let store = { posts: [], scheduled: [] };
 try { if (fs.existsSync(DATA_FILE)) store = { ...store, ...JSON.parse(fs.readFileSync(DATA_FILE, "utf8")) }; } catch (e) { console.error(e.message); }
 function save() { try { fs.writeFileSync(DATA_FILE, JSON.stringify(store, null, 2)); } catch (e) { console.error("Save failed:", e.message); } }
@@ -33,19 +35,44 @@ app.get("/api/posts", (req, res) => res.json({ posts: store.posts, scheduled: st
 app.post("/api/generate", async (req, res) => {
   const topic = String(req.body.topic || "").trim(), tone = String(req.body.tone || "친근한").trim();
   if (!topic) return res.status(400).json({ error: "주제를 입력해 주세요." });
-  if (process.env.GEMINI_API_KEY) {
-    try {
-      const prompt = "스레드에 올릴 자연스러운 한국어 게시글을 작성해. 주제: " + topic + ". 말투: " + tone + ". 2~5문장, 과장이나 허위 사실 없이, 게시글 본문만 출력해.";
-      const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=" + encodeURIComponent(process.env.GEMINI_API_KEY);
-      const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error?.message || "Gemini 요청 실패");
-      const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("").trim();
-      if (!text) throw new Error("AI가 글을 생성하지 못했습니다.");
-      return res.json({ text, mode: "AI" });
-    } catch (e) { return res.status(502).json({ error: "AI 생성 실패: " + e.message }); }
+  if (!process.env.GEMINI_API_KEY) {
+    return res.json({ mode: "간편 초안", text: topic + "에 대해 생각해 볼 만한 점을 정리해 봤어요.\n\n여러분은 어떻게 생각하시나요? 경험이나 의견이 있다면 댓글로 공유해 주세요." });
   }
-  res.json({ mode: "간편 초안", text: topic + "에 대해 생각해 볼 만한 점을 정리해 봤어요.\n\n여러분은 어떻게 생각하시나요? 경험이나 의견이 있다면 댓글로 공유해 주세요." });
+  const prompt = "스레드에 올릴 자연스러운 한국어 게시글을 작성해. 주제: " + topic + ". 말투: " + tone + ". 2~5문장, 과장이나 허위 사실 없이, 게시글 본문만 출력해.";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+  try {
+    const url = "https://generativelanguage.googleapis.com/v1beta/models/" + GEMINI_MODEL + ":generateContent";
+    const r = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": process.env.GEMINI_API_KEY
+      },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens: 300 } }),
+      signal: controller.signal
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const detail = data.error?.message || "Gemini 요청 실패 (" + r.status + ")";
+      if (r.status === 429 || r.status === 503 || r.status === 504) {
+        throw new Error("Gemini 서버가 혼잡합니다. 잠시 후 다시 시도해 주세요. (" + detail + ")");
+      }
+      throw new Error(detail);
+    }
+    const generated = data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("").trim();
+    if (!generated) throw new Error("AI가 글을 생성하지 못했습니다.");
+    return res.json({ text: generated, mode: "AI (" + GEMINI_MODEL + ")" });
+  } catch (e) {
+    const timedOut = e.name === "AbortError";
+    const detail = timedOut
+      ? "Gemini 응답 시간 초과(25초). Google 서버가 지연되고 있습니다. 다시 시도해 주세요."
+      : e.message;
+    console.error("Gemini generate failed:", detail);
+    return res.status(502).json({ error: "AI 생성 실패: " + detail });
+  } finally {
+    clearTimeout(timeout);
+  }
 });
 app.post("/api/publish", async (req, res) => {
   const text = String(req.body.text || "").trim();
@@ -58,7 +85,7 @@ app.post("/api/publish", async (req, res) => {
 });
 app.post("/api/schedule", (req, res) => {
   const text = String(req.body.text || "").trim(), at = new Date(req.body.at);
-  if (!text) return res.status(400).json({ error: "게시글 내용을 입력해 주세요." });
+  if (!text) return res.status(400).json({ error: "게시글 내용을 먼저 작성해 주세요." });
   if (Number.isNaN(at.getTime()) || at.getTime() <= Date.now()) return res.status(400).json({ error: "미래 시간을 선택해 주세요." });
   const item = { id: String(Date.now()) + Math.random().toString(16).slice(2), text, at: at.toISOString(), status: "예약 대기" };
   store.scheduled.push(item); save(); res.json({ ok: true, item });
