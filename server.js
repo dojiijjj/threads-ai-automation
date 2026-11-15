@@ -603,7 +603,7 @@ app.post("/api/generate", async (req, res) => {
 
   const commentParts = [];
   if (category === "toss") {
-    commentParts.push("상품 링크\n" + affiliateLink);
+    commentParts.push("상품 링크\n" + [affiliateLink, affiliateLink, affiliateLink].join("\n"));
     commentParts.push(DISCLOSURES.toss);
   }
 
