@@ -1,0 +1,13 @@
+{
+  "name": "threads-ai-automation",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mobile-friendly Threads post drafting, scheduling and publishing dashboard",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
