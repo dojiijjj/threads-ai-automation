@@ -266,6 +266,37 @@ async function fetchGoogleNewsFeed(query) {
   }
 }
 
+async function gatherEntertainmentNews() {
+  const queries = ["연예 when:1d", "배우 가수 아이돌 드라마 영화 when:1d"];
+  const feeds = await Promise.allSettled(queries.map(query => fetchGoogleNewsFeed(query)));
+  const seen = new Set();
+  const items = [];
+  for (const result of feeds) {
+    if (result.status !== "fulfilled") continue;
+    for (const item of result.value) {
+      const key = item.title.replace(/\s+/g, "").toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      items.push(item);
+    }
+  }
+  items.sort((a, b) => (Date.parse(b.publishedAt) || 0) - (Date.parse(a.publishedAt) || 0));
+  for (const item of items.slice(0, 12)) {
+    if (!item.link) continue;
+    try {
+      const html = await fetchPublicHtml(item.link);
+      const rawImage = htmlMeta(html, "og:image") || htmlMeta(html, "og:image:secure_url") || htmlMeta(html, "twitter:image");
+      if (!rawImage) continue;
+      const imageUrl = new URL(rawImage, item.link);
+      if (!["http:", "https:"].includes(imageUrl.protocol) || imageUrl.username || imageUrl.password) continue;
+      return { title: item.title.slice(0, 300), description: item.description.slice(0, 700), source: item.source || "", link: item.link, publishedAt: item.publishedAt || "", image: imageUrl.toString() };
+    } catch (_) {}
+  }
+  throw new Error(items.length
+    ? "최신 연예 기사는 찾았지만 게시물에 첨부할 대표 사진을 찾지 못했습니다. 잠시 후 다시 시도해 주세요."
+    : "최신 연예계 뉴스 검색 결과가 없습니다. 잠시 후 다시 시도해 주세요.");
+}
+
 async function gatherNewsResearch(topic, todayIssue) {
   const queries = todayIssue
     ? [null, "대한민국 주요 뉴스 when:1d", "사건 사고 when:1d", "사회 이슈 when:1d"]
@@ -327,6 +358,15 @@ function htmlMeta(html, key) {
   }
   return "";
 }
+
+app.get("/api/entertainment-news", async (req, res) => {
+  try {
+    const item = await gatherEntertainmentNews();
+    res.json({ ok: true, item });
+  } catch (e) {
+    res.status(502).json({ error: "연예계 뉴스 검색 실패: " + (e.message || "잠시 후 다시 시도해 주세요.") });
+  }
+});
 
 app.get("/api/link-preview", async (req, res) => {
   const raw = cleanText(req.query.url, 2000);
@@ -565,7 +605,10 @@ app.post("/api/generate", async (req, res) => {
     return res.status(400).json({ error: e.message });
   }
 
-  const subject = productName || topic;
+  const newsItemInput = req.body.newsItem && typeof req.body.newsItem === "object" ? req.body.newsItem : {};
+  const entertainmentTitle = cleanText(newsItemInput.title, 300);
+  const entertainmentNews = category === "daily" && req.body.entertainmentNews === true && Boolean(entertainmentTitle);
+  const subject = productName || topic || (entertainmentNews ? entertainmentTitle : "");
   if (!subject && !todayIssue && !todayDaily) return res.status(400).json({ error: "조사할 키워드나 주제를 입력해 주세요." });
   if (category !== "daily" && !affiliateLink) {
     return res.status(400).json({ error: "토스 쉐어링크를 입력해 주세요." });
@@ -580,7 +623,9 @@ app.post("/api/generate", async (req, res) => {
 
   const today = seoulTodayLabel();
   let newsResearch = [];
-  if (category === "daily" && !todayDaily) {
+  if (entertainmentNews) {
+    newsResearch = [{ title: entertainmentTitle, description: cleanText(newsItemInput.description, 700), source: cleanText(newsItemInput.source, 120), link: "", publishedAt: cleanText(newsItemInput.publishedAt, 120) }];
+  } else if (category === "daily" && !todayDaily) {
     try {
       newsResearch = await gatherNewsResearch(subject, todayIssue);
     } catch (e) {
@@ -595,6 +640,8 @@ app.post("/api/generate", async (req, res) => {
       : "한국어 Threads(스레드)에 올릴 상품 소개 글을 작성해.",
     category === "daily" ? "오늘 날짜(대한민국 서울 기준): " + today : "",
     researchText ? "실시간 뉴스 조사 자료:\n" + researchText : "",
+    entertainmentNews ? "연예계 뉴스 게시글이다. 게시글의 첫 문장(첫 줄)은 아래 기사 제목을 한 글자도 바꾸지 말고 그대로 사용해: " + entertainmentTitle + ". 제목 다음부터는 친구에게 이 소식을 전하듯 자연스럽게 설명해." : "",
+    entertainmentNews ? "연예인 관련 루머, 사생활, 범죄 의혹, 건강 상태 등 민감하거나 확인되지 않은 내용은 사실처럼 쓰지 마. 조사 자료에 있는 확인된 사실만 사용하고, 추측·과장·악성 표현은 금지해. 기사 요약을 그대로 베끼지 말고 핵심을 새 문장으로 설명해." : "",
     category === "daily" && todayIssue
       ? "주제 선택: 아래 Google 뉴스의 주요 기사 목록에서 오늘 대한민국에서 널리 보도되는 뉴스·사건·사회 이슈를 골라라. 여러 언론사가 함께 다룬 사안을 우선하되 객관적으로 확인할 수 없는 인기 순위는 단정하지 마라."
       : "",
@@ -674,7 +721,7 @@ app.post("/api/generate", async (req, res) => {
       }
       generated = data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("").trim() || "";
       if (!generated) throw new Error("AI가 글을 생성하지 못했습니다.");
-      mode = "AI (" + GEMINI_MODEL + (category === "daily" ? (todayDaily ? " · 오늘의 일상" : " · Google 뉴스 조사 " + newsResearch.length + "건") : "") + ")";
+      mode = "AI (" + GEMINI_MODEL + (category === "daily" ? (entertainmentNews ? " · 연예계 뉴스" : (todayDaily ? " · 오늘의 일상" : " · Google 뉴스 조사 " + newsResearch.length + "건")) : "") + ")";
     } catch (e) {
       const detail = e.name === "AbortError"
         ? "검색 및 글 생성 시간이 초과됐습니다. 다시 시도해 주세요."
