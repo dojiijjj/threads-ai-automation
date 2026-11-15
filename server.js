@@ -572,7 +572,7 @@ app.post("/api/generate", async (req, res) => {
     return res.status(400).json({ error: "토스 쉐어링크를 입력해 주세요." });
   }
   if (category === "daily" && !process.env.GEMINI_API_KEY) {
-    return res.status(503).json({ error: "실시간 조사 기능을 사용하려면 Railway에 GEMINI_API_KEY가 등록되어 있어야 합니다." });
+    return res.status(503).json({ error: "AI 글 생성 기능을 사용하려면 Railway에 GEMINI_API_KEY가 등록되어 있어야 합니다." });
   }
 
   const linkInfo = req.body.linkInfo && typeof req.body.linkInfo === "object" ? req.body.linkInfo : {};
@@ -582,7 +582,7 @@ app.post("/api/generate", async (req, res) => {
   const today = seoulTodayLabel();
   const researchText = "";
 
-  const prompt = [
+  const basePrompt = [
     shortTextType === "emotional" ? "한국어 감성글귀를 작성해." : shortTextType === "proverb" ? "한국어 짧은 명언 형식의 문장을 새롭게 창작해." : category === "daily"
       ? (todayDaily ? "한국어 Threads(스레드)에 올릴 친근하고 공감 가는 일상 수다 글을 작성해." : "한국어 Threads(스레드)에 올릴 사실 기반 일상·정보 게시글을 작성해.")
       : "한국어 Threads(스레드)에 올릴 상품 소개 글을 작성해.",
@@ -592,15 +592,6 @@ app.post("/api/generate", async (req, res) => {
       ? "주제 선택: 아래 Google 뉴스의 주요 기사 목록에서 오늘 대한민국에서 널리 보도되는 뉴스·사건·사회 이슈를 골라라. 여러 언론사가 함께 다룬 사안을 우선하되 객관적으로 확인할 수 없는 인기 순위는 단정하지 마라."
       : "",
     category === "daily" && !todayDaily && !shortTextType ? "사용자가 입력한 주제: " + subject + ". 최신 뉴스나 실시간 조사를 했다고 주장하지 말고, 일반적으로 알려진 내용을 이해하기 쉽게 풀어 써." : "",
-    category === "daily" && !todayDaily && !shortTextType
-      ? "아래 기사 목록의 제목·언론사·보도 시각·요약을 조사 자료로 사용해라. 오래된 사건을 오늘 발생한 것처럼 쓰지 마라. 여러 언론사의 보도에서 공통으로 확인되는 사실만 단정하고 확인되지 않은 숫자·인명·장소·원인·피해 규모는 만들지 마라. 요약에 없는 원인이나 경과는 추측하지 말고 확인 가능한 범위에서 설명해라. 기사 제목을 베끼지 마라."
-      : "",
-    category === "daily" && !todayDaily && !shortTextType
-      ? "문체는 뉴스 기사나 방송 앵커의 보도처럼 쓰지 마. '전해졌습니다', '밝혔습니다', '보도됐습니다' 같은 딱딱한 기사체와 사실을 시간순으로 나열하는 방식은 피하고, 친구에게 이 이슈의 내용을 쉽게 알려주듯 자연스럽게 풀어 설명해. 무슨 일이거나 어떤 내용인지, 왜 관심을 받고 있는지, 우리에게 어떤 의미가 있는지를 쉬운 말로 전달해. 확인된 사실과 추측은 분명히 구분해."
-      : "",
-    category === "daily" && !todayDaily && !shortTextType
-      ? "댓글 참여 유도: 정확히 2단락으로 쓰고, 두 번째 단락의 마지막 문장은 해당 이슈와 직접 관련된 자연스러운 질문으로 끝내. 독자가 자기 생각이나 경험을 댓글로 나눌 수 있는 열린 질문을 해. '여러분 생각은 어떠세요?'만 기계적으로 덧붙이지 말고, 글 내용을 읽어야 답할 수 있는 구체적인 질문을 만들어. 질문을 위해 사실을 왜곡하거나 특정 의견을 강요하지 마."
-      : "",
     category === "toss" ? "상품명 또는 주제: " + subject : "",
     pageTitle ? "링크 페이지 제목: " + pageTitle : "",
     pageDescription ? "링크 페이지 설명: " + pageDescription : "",
@@ -631,6 +622,11 @@ app.post("/api/generate", async (req, res) => {
     category === "toss" ? "광고라는 사실을 숨기려 하지 말고, 자연스러운 추천 문체로만 작성해." : "",
     "게시글 본문만 출력해. 조사 과정, 출처 목록, 안내 문구를 별도로 붙이지 마."
   ].filter(Boolean).join("\n");
+  const prompt = shortTextType
+    ? (shortTextType === "emotional"
+      ? "한국어 감성글귀를 새롭게 창작해. 잔잔하고 따뜻하며 여운이 남는 문장으로, 마음을 위로하거나 작은 희망을 주는 내용으로 써. 정확히 두 줄만 출력하고 각 줄은 짧은 한 문장으로 작성해. 줄 사이에 빈 줄을 넣지 마. 제목, 번호, 따옴표, 이모지, 해설은 금지해. 기존 문구를 베끼지 마."
+      : "한국어 명언을 새롭게 창작해. 삶, 용기, 성장, 관계, 시간 중 하나의 주제로 짧고 깊은 깨달음을 담아. 실제 유명인의 발언처럼 출처나 인물을 지어내지 마. 정확히 두 줄만 출력하고 각 줄은 짧은 한 문장으로 작성해. 줄 사이에 빈 줄을 넣지 마. 제목, 번호, 따옴표, 이모지, 해설은 금지해. 기존 문구를 베끼지 마.")
+    : basePrompt;
 
   let generated = "";
   let mode = "간편 초안";
@@ -707,8 +703,8 @@ app.post("/api/generate", async (req, res) => {
     commentText: commentParts.join("\n\n"),
     mode,
     category,
-    productName: subject || (todayDaily ? "오늘의 일상" : "오늘의 이슈"),
-    researchCount: newsResearch.length,
+    productName: subject || (todayDaily ? "오늘의 일상" : shortTextType === "emotional" ? "감성글귀" : shortTextType === "proverb" ? "명언" : ""),
+    researchCount: 0,
     links: { affiliateLink }
   });
 });
