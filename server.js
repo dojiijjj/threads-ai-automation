@@ -232,7 +232,7 @@ function rssValue(block, tag) {
   if (end < 0) return "";
   let value = block.slice(start, end).trim();
   if (value.startsWith("<![CDATA[")) value = value.slice(9, -3);
-  return decodeHtml(value.replace(/<[^>]*>/g, " "));
+  return decodeHtml(value).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
 async function fetchGoogleNewsFeed(query) {
@@ -290,7 +290,7 @@ async function gatherNewsResearch(topic, todayIssue) {
         return Number.isFinite(time) && time >= dayStart;
       })
     : unique;
-  const selected = (currentDayItems.length ? currentDayItems : unique).slice(0, 14);
+  const selected = (todayIssue ? currentDayItems : unique).slice(0, 14);
   if (!selected.length) {
     throw new Error(todayIssue
       ? "오늘 확인할 수 있는 뉴스 검색 결과가 없습니다. 잠시 후 다시 시도해 주세요."
