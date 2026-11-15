@@ -19,14 +19,14 @@ jobs:
       - name: Refresh Threads long-lived token and update Railway
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_SERVICE_ID: ${{ vars.RAILWAY_SERVICE_ID }}
-          RAILWAY_ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
+          RAILWAY_SERVICE_ID: eaa720a8-784e-4ed1-928a-8faab5cae4de
+          RAILWAY_ENVIRONMENT_ID: 501495b2-a685-4589-88a9-15378361ac8f
         shell: bash
         run: |
           set -euo pipefail
 
-          if [[ -z "${RAILWAY_TOKEN:-}" || -z "${RAILWAY_SERVICE_ID:-}" || -z "${RAILWAY_ENVIRONMENT_ID:-}" ]]; then
-            echo "Missing RAILWAY_TOKEN or Railway service/environment repository variables."
+          if [[ -z "${RAILWAY_TOKEN:-}" ]]; then
+            echo "Missing RAILWAY_TOKEN GitHub Actions secret."
             exit 1
           fi
 
