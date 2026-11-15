@@ -180,7 +180,7 @@
       return;
     }
     button.disabled = true;
-    message(todayIssue ? '오늘 대한민국의 주요 뉴스와 이슈를 조사 중...' : (currentCategory === 'daily' ? '키워드 관련 사건과 최신 자료를 조사 중...' : 'AI 글 생성 중...'));
+    message(todayIssue ? '오늘의 주요 뉴스와 사건 기사를 모으는 중...' : (currentCategory === 'daily' ? 'Google 뉴스에서 키워드 관련 기사를 조사 중...' : 'AI 글 생성 중...'));
     try {
       const result = await api('/api/generate', {
         method: 'POST',
