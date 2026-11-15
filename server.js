@@ -664,8 +664,9 @@ app.post("/api/generate", async (req, res) => {
   const topic = cleanText(req.body.topic, 300);
   const productName = cleanText(req.body.productName, 240);
   const tone = cleanText(req.body.tone || "생활형 후기형", 60);
-  const todayIssue = category === "daily" && req.body.todayIssue === true;
+  const todayIssue = false;
   const todayDaily = category === "daily" && req.body.todayDaily === true;
+  const shortTextType = category === "daily" && ["emotional", "proverb"].includes(req.body.shortTextType) ? req.body.shortTextType : "";
   let affiliateLink = "";
   try {
     affiliateLink = validateHttpUrl(cleanText(req.body.affiliateLink, 2000));
@@ -676,8 +677,8 @@ app.post("/api/generate", async (req, res) => {
   const newsItemInput = req.body.newsItem && typeof req.body.newsItem === "object" ? req.body.newsItem : {};
   const entertainmentTitle = cleanText(newsItemInput.title, 300);
   const entertainmentNews = category === "daily" && req.body.entertainmentNews === true && Boolean(entertainmentTitle);
-  const subject = productName || topic || (entertainmentNews ? entertainmentTitle : "");
-  if (!subject && !todayIssue && !todayDaily) return res.status(400).json({ error: "조사할 키워드나 주제를 입력해 주세요." });
+  const subject = productName || topic;
+  if (!subject && !todayIssue && !todayDaily && !shortTextType) return res.status(400).json({ error: "주제를 입력해 주세요." });
   if (category !== "daily" && !affiliateLink) {
     return res.status(400).json({ error: "토스 쉐어링크를 입력해 주세요." });
   }
@@ -691,9 +692,7 @@ app.post("/api/generate", async (req, res) => {
 
   const today = seoulTodayLabel();
   let newsResearch = [];
-  if (entertainmentNews) {
-    newsResearch = [{ title: entertainmentTitle, description: cleanText(newsItemInput.description, 700), source: cleanText(newsItemInput.source, 120), link: "", publishedAt: cleanText(newsItemInput.publishedAt, 120) }];
-  } else if (category === "daily" && !todayDaily) {
+  if (false) {
     try {
       newsResearch = await gatherNewsResearch(subject, todayIssue);
     } catch (e) {
@@ -703,7 +702,7 @@ app.post("/api/generate", async (req, res) => {
   const researchText = newsResearch.length ? formatNewsResearch(newsResearch) : "";
 
   const prompt = [
-    category === "daily"
+    shortTextType === "emotional" ? "한국어 감성글귀를 작성해." : shortTextType === "proverb" ? "한국어 짧은 명언 형식의 문장을 새롭게 창작해." : category === "daily"
       ? (todayDaily ? "한국어 Threads(스레드)에 올릴 친근하고 공감 가는 일상 수다 글을 작성해." : "한국어 Threads(스레드)에 올릴 사실 기반 일상·정보 게시글을 작성해.")
       : "한국어 Threads(스레드)에 올릴 상품 소개 글을 작성해.",
     category === "daily" ? "오늘 날짜(대한민국 서울 기준): " + today : "",
@@ -729,6 +728,8 @@ app.post("/api/generate", async (req, res) => {
     pageTitle ? "링크 페이지 제목: " + pageTitle : "",
     pageDescription ? "링크 페이지 설명: " + pageDescription : "",
     "게시물 유형: " + (category === "toss" ? "토스 쉐어링크 상품 소개" : "일상/정보 게시글"),
+    shortTextType ? (shortTextType === "emotional" ? "잔잔하고 여운이 남는 감성적인 문장으로 써." : "짧고 깊은 깨달음을 주는 명언처럼 써. 실제 유명인의 말인 것처럼 출처나 인물을 지어내지 마.") : "",
+    shortTextType ? "반드시 서로 자연스럽게 이어지는 정확히 2줄만 출력해. 각 줄은 한 문장으로 짧게 써. 제목, 번호, 따옴표, 해설, 이모지, 빈 줄은 넣지 마. 기존 문구를 그대로 베끼지 말고 새롭게 창작해." : "",
     "말투 설정: " + tone,
     "최우선 글쓰기 스타일: 대한민국 상위권 Threads 전문 카피라이터처럼 써. 독자가 스크롤을 멈추고 끝까지 읽고 싶도록 작성해. 친구에게 직접 이야기하듯 편하고 자연스러운 반말을 기본으로 하고, 딱딱한 설명문·교과서체·과하게 정돈된 AI 말투·뻔한 서론은 절대 쓰지 마. 첫 문장은 반드시 호기심, 공감, 놀라움, 반전 중 주제에 맞는 요소를 활용한 강한 후킹으로 시작해. '와..', '미쳤다', '진짜 소름 돋는 건', '근데 더 놀라운 건', '왜 이게 중요하냐면' 같은 구어체는 문맥에 맞을 때만 자연스럽게 섞고 억지로 반복하지 마. 실제 사람이 흥분하거나 놀라서 이야기하는 듯 생동감 있게 쓰되 과장하거나 사실을 부풀리지 마. 짧고 리듬감 있는 문장과 자연스러운 줄바꿈으로 읽기 쉽게 만들고, 한 문장에 너무 많은 정보를 넣지 마. 구체적인 숫자와 사례는 조사 자료나 확인된 정보에 있을 때만 활용해. 다음 문장이 궁금해지는 흐름을 만들고, 마지막에는 주제에 맞게 독자의 생각이나 경험을 묻거나 저장·공유 등 자연스러운 참여를 유도해. 모든 글을 같은 패턴으로 찍어내지 말고 주제에 맞게 분위기와 표현을 바꿔. 예시 표현은 말투와 리듬만 참고하고 문장이나 구성을 복제하지 마. 이모지는 최대 3개까지만 사용하고, 마크다운 굵은 글씨와 제목 문법은 사용하지 마.",
     "출력 형식 우선 규칙: 사용자가 정한 기존 형식을 유지해. 본문은 반드시 정확히 2단락으로 작성하고, 각 단락은 줄바꿈 기준 최대 3줄(1~3줄)로 제한해. 한 줄에는 짧은 문장 하나만 넣고, 문장이 길면 자연스럽게 나눠 써. 4~9개 번호 목록이나 소제목은 사용하지 마. 두 단락 사이에는 빈 줄을 하나 넣어. 두 단락이라는 형식 외에는 주제에 따라 표현과 전개를 유연하게 바꿔.",
@@ -765,7 +766,7 @@ app.post("/api/generate", async (req, res) => {
       const url = "https://generativelanguage.googleapis.com/v1beta/models/" + GEMINI_MODEL + ":generateContent";
       const requestBody = {
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 620, temperature: category === "daily" ? 0.55 : 0.8 }
+        generationConfig: { maxOutputTokens: shortTextType ? 100 : 620, temperature: shortTextType ? 0.9 : (category === "daily" ? 0.55 : 0.8) }
       };
       const r = await fetch(url, {
         method: "POST",
@@ -789,7 +790,7 @@ app.post("/api/generate", async (req, res) => {
       }
       generated = data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("").trim() || "";
       if (!generated) throw new Error("AI가 글을 생성하지 못했습니다.");
-      mode = "AI (" + GEMINI_MODEL + (category === "daily" ? (entertainmentNews ? " · 연예계 뉴스" : (todayDaily ? " · 오늘의 일상" : " · Google 뉴스 조사 " + newsResearch.length + "건")) : "") + ")";
+      mode = "AI (" + GEMINI_MODEL + (category === "daily" ? (shortTextType ? (shortTextType === "emotional" ? " · 감성글귀" : " · 명언") : (todayDaily ? " · 오늘의 일상" : " · AI 글 생성")) : "") + ")";
     } catch (e) {
       const detail = e.name === "AbortError"
         ? "검색 및 글 생성 시간이 초과됐습니다. 다시 시도해 주세요."
@@ -801,10 +802,12 @@ app.post("/api/generate", async (req, res) => {
     }
   }
 
-  if (entertainmentNews && !generated.trim().startsWith(entertainmentTitle)) {
-    generated = entertainmentTitle + "\n" + generated.trim();
+  if (shortTextType) {
+    generated = String(generated || "").replace(/\\r/g, "").split("\\n").map(line => line.trim()).filter(Boolean).slice(0, 2).join("\\n");
+    if (generated.split("\\n").length < 2) generated = generated.replace(/([.!?。！？])\\s+/, "$1\\n");
+  } else {
+    generated = exactlyTwoParagraphs(generated);
   }
-  generated = exactlyTwoParagraphs(generated);
 
   const commentParts = [];
   if (category === "toss") {
