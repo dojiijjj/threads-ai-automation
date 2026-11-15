@@ -1,0 +1,57 @@
+name: Refresh Threads access token
+
+on:
+  schedule:
+    # Monthly at 03:00 Korea time (18:00 UTC on the 1st).
+    - cron: "0 18 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  refresh-token:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Refresh Threads long-lived token and update Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_SERVICE_ID: ${{ vars.RAILWAY_SERVICE_ID }}
+          RAILWAY_ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${RAILWAY_TOKEN:-}" || -z "${RAILWAY_SERVICE_ID:-}" || -z "${RAILWAY_ENVIRONMENT_ID:-}" ]]; then
+            echo "Missing RAILWAY_TOKEN or Railway service/environment repository variables."
+            exit 1
+          fi
+
+          CURRENT_TOKEN="$(railway variable list --kv --service "$RAILWAY_SERVICE_ID" --environment "$RAILWAY_ENVIRONMENT_ID" | sed -n 's/^THREADS_ACCESS_TOKEN=//p' | head -n 1)"
+          if [[ -z "$CURRENT_TOKEN" ]]; then
+            echo "THREADS_ACCESS_TOKEN was not found in Railway."
+            exit 1
+          fi
+
+          RESPONSE="$(curl --silent --show-error --fail-with-body --get \
+            --data-urlencode "grant_type=th_refresh_token" \
+            --data-urlencode "access_token=$CURRENT_TOKEN" \
+            "https://graph.threads.net/refresh_access_token")"
+
+          NEW_TOKEN="$(printf '%s' "$RESPONSE" | jq -r '.access_token // empty')"
+          EXPIRES_IN="$(printf '%s' "$RESPONSE" | jq -r '.expires_in // 0')"
+
+          if [[ -z "$NEW_TOKEN" || "$EXPIRES_IN" -lt 5000000 ]]; then
+            echo "Threads did not return a valid refreshed long-lived token."
+            echo "$RESPONSE" | jq 'del(.access_token)'
+            exit 1
+          fi
+
+          printf '%s' "$NEW_TOKEN" | railway variable set THREADS_ACCESS_TOKEN --stdin \
+            --service "$RAILWAY_SERVICE_ID" \
+            --environment "$RAILWAY_ENVIRONMENT_ID"
+
+          echo "Threads token refreshed and Railway variable updated. Expires in $EXPIRES_IN seconds."
