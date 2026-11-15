@@ -34,7 +34,7 @@ button.danger{background:#492326;color:#ffd9dc}
 #linkInfo{color:#b8d5ff;font-size:12px;line-height:1.5;margin-top:8px;overflow-wrap:anywhere}
 .field-note{margin:6px 0 0}
 </style>
-<script src="/app.js?v=6" defer></script>
+<script src="/app.js?v=7" defer></script>
 </head>
 <body>
 <main>
@@ -67,12 +67,17 @@ button.danger{background:#492326;color:#ffd9dc}
     </select>
 
     <div class="actions"><button id="generate" type="button">AI 글 생성</button></div>
-    <label for="post">생성된 Threads 게시글</label>
-    <textarea id="post" placeholder="생성된 글과 링크, 제휴 고지 문구가 여기에 표시됩니다. 직접 수정할 수 있어요."></textarea>
+    <label for="post">게시글 본문</label>
+    <textarea id="post" placeholder="Threads에 올릴 본문입니다. 상품 링크와 제휴 고지 문구는 포함되지 않습니다."></textarea>
+    <label for="comment">게시 후 첫 댓글</label>
+    <textarea id="comment" style="min-height:110px" placeholder="상품 링크와 제휴 고지 문구가 여기에 들어갑니다. 게시 직후 자동 댓글로 등록됩니다."></textarea>
     <div class="actions">
-      <button class="secondary" id="copyPost" type="button">글 복사</button>
-      <button id="publish" type="button">지금 게시하기</button>
-      <button class="secondary" id="showSchedule" type="button">예약 게시</button>
+      <button class="secondary" id="copyPost" type="button">게시글 복사</button>
+      <button class="secondary" id="copyComment" type="button">댓글 복사</button>
+    </div>
+    <div class="actions">
+      <button id="publish" type="button">게시글 + 댓글 등록</button>
+      <button class="secondary" id="showSchedule" type="button">게시글 + 댓글 예약</button>
     </div>
     <div id="scheduleBox" class="hidden">
       <label for="when">게시 예약 시간</label>
@@ -90,7 +95,7 @@ button.danger{background:#492326;color:#ffd9dc}
     <div id="list"></div>
   </div>
 
-  <p class="notice">토스 API 연동은 사용하지 않습니다. 토스 쉐어링크가 포함된 문장 전체를 붙여 넣어도 URL을 자동으로 추출합니다. 링크 미리보기는 공개 웹페이지에서 상품명·설명을 읽을 수 있을 때만 작동합니다. 확인되지 않은 가격, 할인율, 수수료, 배송, 사용 경험은 AI가 지어내지 않습니다.</p>
+  <p class="notice">토스 API 연동은 사용하지 않습니다. 게시글에는 상품 링크와 제휴 고지 문구를 넣지 않고, 게시 직후 첫 댓글로 자동 등록합니다. 댓글 등록에는 Meta Threads API의 threads_manage_replies 권한이 필요할 수 있습니다. 링크 미리보기는 공개 웹페이지에서 상품명·설명을 읽을 수 있을 때만 작동합니다.</p>
 </main>
 </body>
 </html>
