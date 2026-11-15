@@ -42,6 +42,54 @@ function token() {
   return process.env.THREADS_ACCESS_TOKEN || "";
 }
 
+
+function exactlyThreeParagraphs(value) {
+  const source = String(value || "").replace(/\r/g, "").trim();
+  if (!source) return "";
+  let paragraphs = source.split(/\n\s*\n+/)
+    .map(part => part.replace(/\s*\n\s*/g, " ").trim())
+    .filter(Boolean);
+  if (paragraphs.length === 3) return paragraphs.join("\n\n");
+
+  let units = paragraphs;
+  if (units.length < 3) {
+    const sentences = source.replace(/\n+/g, " ")
+      .match(/[^.!?。！？]+[.!?。！？]+|[^.!?。！？]+$/g);
+    units = (sentences || []).map(part => part.trim()).filter(Boolean);
+  }
+  if (units.length < 3) {
+    const words = source.replace(/\n+/g, " ").split(/\s+/).filter(Boolean);
+    const chunk = Math.ceil(words.length / 3);
+    units = [
+      words.slice(0, chunk).join(" "),
+      words.slice(chunk, chunk * 2).join(" "),
+      words.slice(chunk * 2).join(" ")
+    ].filter(Boolean);
+  }
+  const groups = [[], [], []];
+  units.forEach((part, index) => {
+    groups[Math.min(2, Math.floor(index * 3 / units.length))].push(part);
+  });
+  return groups.map(group => group.join(" ").trim()).filter(Boolean).join("\n\n");
+}
+
+async function waitForThreadContainer(containerId) {
+  const base = "https://graph.threads.net/v1.0";
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const status = await threadsRequest(
+      base + "/" + encodeURIComponent(containerId) +
+      "?fields=status,error_message&access_token=" + encodeURIComponent(token())
+    );
+    if (status.status === "FINISHED") return;
+    if (status.status === "ERROR" || status.status === "EXPIRED") {
+      throw new Error(status.error_message || ("댓글 컨테이너 처리 실패: " + status.status));
+    }
+    if (status.status === "PUBLISHED") return;
+    if (attempt < 11) await new Promise(resolve => setTimeout(resolve, 5000));
+  }
+  throw new Error("댓글 처리 시간이 초과됐습니다. 게시글은 등록됐으니 댓글 다시 등록을 눌러 재시도해 주세요.");
+}
+
 function cleanText(value, max = 2000) {
   return String(value || "").trim().slice(0, max);
 }
@@ -230,6 +278,7 @@ async function publishReply(text, parentPostId) {
       access_token: token()
     })
   });
+  await waitForThreadContainer(container.id);
   const result = await threadsRequest(base + "/" + me.id + "/threads_publish", {
     method: "POST",
     body: new URLSearchParams({ creation_id: container.id, access_token: token() })
@@ -244,6 +293,28 @@ app.get("/api/status", async (req, res) => {
     res.json({ configured: true, username: me.username });
   } catch (e) {
     res.json({ configured: true, error: e.message });
+  }
+});
+
+
+app.get("/api/reply-status", async (req, res) => {
+  if (!token()) return res.json({ ok: false, canReply: false, error: "THREADS_ACCESS_TOKEN이 등록되지 않았습니다." });
+  try {
+    const base = "https://graph.threads.net/v1.0";
+    const me = await threadsRequest(base + "/me?fields=id,username&access_token=" + encodeURIComponent(token()));
+    const quota = await threadsRequest(
+      base + "/" + me.id + "/threads_publishing_limit?fields=reply_quota_usage,reply_config&access_token=" + encodeURIComponent(token())
+    );
+    const info = Array.isArray(quota.data) ? quota.data[0] : quota;
+    res.json({
+      ok: true,
+      canReply: true,
+      username: me.username,
+      replyQuotaUsed: Number(info?.reply_quota_usage || 0),
+      replyQuotaTotal: Number(info?.reply_config?.quota_total || 0)
+    });
+  } catch (e) {
+    res.json({ ok: false, canReply: false, error: e.message || "댓글 권한 확인에 실패했습니다." });
   }
 });
 
@@ -281,7 +352,8 @@ app.post("/api/generate", async (req, res) => {
     "예시의 문체 특징을 적용해: '이런 거 숨겨두는 게 국룰인 거 알지? ㅋㅋ'처럼 일상 공감으로 시작하고, 상품을 발견한 순간의 반응을 자연스럽게 말한 다음, 확인된 특징을 감각적이고 구체적인 표현으로 풀어줘.",
     "짧은 문장과 줄바꿈으로 리듬을 만들고, 중간중간 '진짜 요물임', '장난 아님', '나도 모르게 눈길 감', 'ㅠㅠ', 'ㅋㅋ' 같은 구어체 반응을 과하지 않게 섞어줘.",
     "마무리는 친구에게 이야기하듯 가벼운 농담이나 솔직한 한마디로 끝내. 이모티콘과 느낌표를 연달아 남발하지 마.",
-    "첫 줄은 스크롤을 멈추게 하는 후킹 문장으로 쓰고, 전체는 예시처럼 자연스럽게 이어지는 4~7개의 짧은 문장 또는 문단으로 작성해.",
+    "게시글은 반드시 정확히 3개의 단락으로만 작성해. 각 단락은 1~3개의 짧은 문장으로 구성하고, 단락 사이에는 빈 줄을 하나만 넣어. 소제목, 번호, 목록은 쓰지 마.",
+    "첫 번째 단락은 스크롤을 멈추게 하는 후킹 문장으로 시작하고, 두 번째 단락은 확인된 상품 특징이나 주제를 자연스럽게 설명하며, 세 번째 단락은 가벼운 농담이나 솔직한 한마디로 마무리해.",
     "상품명, 기능, 용량, 소재, 구성, 가격, 할인, 배송, 재고 등은 링크 페이지에서 확인된 내용만 사용해. 확인되지 않은 구체 정보는 만들지 마.",
     "사용자가 실제 사용 경험을 제공하지 않았다면 구매하거나 먹어 봤다고 거짓말하지 마. 가족이나 남편의 반응, 직접 사용한 에피소드도 지어내지 말고, '발견했는데', '이런 제품 찾는 분들 참고'처럼 소개형으로 자연스럽게 써.",
     "수익 보장, 과장된 효능, 검증되지 않은 24시간 추적·수수료 주장은 넣지 마.",
@@ -329,6 +401,8 @@ app.post("/api/generate", async (req, res) => {
       clearTimeout(timeout);
     }
   }
+
+  generated = exactlyThreeParagraphs(generated);
 
   const commentParts = [];
   if (category === "toss") {
