@@ -70,9 +70,7 @@
     $('linkPreview').classList.toggle('hidden', !isAffiliate);
     $('todayIssue').classList.toggle('hidden', isAffiliate);
     $('topicLabel').textContent = isAffiliate ? '상품명' : '조사할 키워드';
-    $('topic').placeholder = isAffiliate
-      ? '상품명 입력'
-      : '예: 부산 화재, 전기차 보조금, AI 규제';
+    $('topic').placeholder = '';
     $('generate').textContent = isAffiliate ? 'AI 글 생성' : '키워드 조사 후 글 생성';
     $('affiliateLabel').textContent = '토스 쉐어링크';
     linkInfo = null;
@@ -215,7 +213,7 @@
       });
       $('post').value = result.text || '';
       $('comment').value = result.commentText || '';
-      message((result.mode || 'AI') + '으로 3단락 게시글' + (todayIssue ? '을 만들었습니다.' : '을 생성했습니다.'));
+      message((result.mode || 'AI') + '으로 2단락 게시글' + (todayIssue ? '을 만들었습니다.' : '을 생성했습니다.'));
     } catch (err) {
       message('글 생성 실패: ' + errorText(err));
     } finally {
