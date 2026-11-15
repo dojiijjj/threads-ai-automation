@@ -36,7 +36,7 @@ app.post("/api/generate", async (req, res) => {
   if (process.env.GEMINI_API_KEY) {
     try {
       const prompt = "스레드에 올릴 자연스러운 한국어 게시글을 작성해. 주제: " + topic + ". 말투: " + tone + ". 2~5문장, 과장이나 허위 사실 없이, 게시글 본문만 출력해.";
-      const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + encodeURIComponent(process.env.GEMINI_API_KEY);
+      const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=" + encodeURIComponent(process.env.GEMINI_API_KEY);
       const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error?.message || "Gemini 요청 실패");
