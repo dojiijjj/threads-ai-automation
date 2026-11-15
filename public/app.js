@@ -69,6 +69,7 @@
     $('affiliateWrap').classList.toggle('hidden', !isAffiliate);
     $('linkPreview').classList.toggle('hidden', !isAffiliate);
     $('todayIssue').classList.toggle('hidden', isAffiliate);
+    $('todayDaily').classList.toggle('hidden', isAffiliate);
     $('topicLabel').textContent = isAffiliate ? '상품명' : '조사할 키워드';
     $('topic').placeholder = '';
     $('generate').textContent = isAffiliate ? 'AI 글 생성' : '키워드 조사 후 글 생성';
@@ -183,10 +184,10 @@
     }
   });
 
-  async function generatePost(todayIssue) {
-    const button = todayIssue ? $('todayIssue') : $('generate');
+  async function generatePost(todayIssue, todayDaily) {
+    const button = todayIssue ? $('todayIssue') : (todayDaily ? $('todayDaily') : $('generate'));
     const topic = $('topic').value.trim();
-    if (!todayIssue && !topic) {
+    if (!todayIssue && !todayDaily && !topic) {
       message('조사할 키워드를 입력해 주세요.');
       $('topic').focus();
       return;
@@ -197,7 +198,7 @@
       return;
     }
     button.disabled = true;
-    message(todayIssue ? '오늘의 주요 뉴스와 사건 기사를 모으는 중...' : (currentCategory === 'daily' ? 'Google 뉴스에서 키워드 관련 기사를 조사 중...' : 'AI 글 생성 중...'));
+    message(todayIssue ? '오늘의 주요 뉴스와 사건 기사를 모으는 중...' : (todayDaily ? '오늘의 일상 글을 만드는 중...' : (currentCategory === 'daily' ? 'Google 뉴스에서 키워드 관련 기사를 조사 중...' : 'AI 글 생성 중...')));
     try {
       const result = await api('/api/generate', {
         method: 'POST',
@@ -206,6 +207,7 @@
           topic,
           productName: currentCategory === 'daily' ? '' : topic,
           todayIssue: Boolean(todayIssue),
+          todayDaily: Boolean(todayDaily),
           tone: $('tone').value,
           affiliateLink: $('affiliateLink').value,
           linkInfo
@@ -213,7 +215,7 @@
       });
       $('post').value = result.text || '';
       $('comment').value = result.commentText || '';
-      message((result.mode || 'AI') + '으로 2단락 게시글' + (todayIssue ? '을 만들었습니다.' : '을 생성했습니다.'));
+      message((result.mode || 'AI') + '으로 2단락 게시글' + (todayDaily ? '을 만들었습니다.' : (todayIssue ? '을 만들었습니다.' : '을 생성했습니다.')));
     } catch (err) {
       message('글 생성 실패: ' + errorText(err));
     } finally {
@@ -222,7 +224,8 @@
   }
 
   $('generate').addEventListener('click', () => generatePost(false));
-  $('todayIssue').addEventListener('click', () => generatePost(true));
+  $('todayIssue').addEventListener('click', () => generatePost(true, false));
+  $('todayDaily').addEventListener('click', () => generatePost(false, true));
 
   $('publish').addEventListener('click', async () => {
     const text = $('post').value.trim();
