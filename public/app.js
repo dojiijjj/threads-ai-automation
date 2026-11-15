@@ -156,7 +156,7 @@ $("copyTags").onclick=async()=>{const tags=(resultData?.tags||[]).slice(0,20).ma
 $("copyHtml").onclick=async()=>{
  if(!$("body").value.trim()){msg("먼저 글을 생성해 주세요.");return;}
  const html=bodyToHtml();
- const full="<article><h1>"+escapeHtml($("postTitle").value)+"</h1>"+html+"</article>";
+ const full="<article>"+html+"</article>";
  try{
   if(navigator.clipboard&&window.ClipboardItem){
    const item=new ClipboardItem({"text/html":new Blob([full],{type:"text/html"}),"text/plain":new Blob([$("postTitle").value+"\n\n"+plainTextWithSources()],{type:"text/plain"})});
