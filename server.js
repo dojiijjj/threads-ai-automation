@@ -43,32 +43,31 @@ function token() {
 }
 
 
-function exactlyThreeParagraphs(value) {
+function exactlyTwoParagraphs(value) {
   const source = String(value || "").replace(/\r/g, "").trim();
   if (!source) return "";
   let paragraphs = source.split(/\n\s*\n+/)
     .map(part => part.replace(/\s*\n\s*/g, " ").trim())
     .filter(Boolean);
-  if (paragraphs.length === 3) return paragraphs.join("\n\n");
+  if (paragraphs.length === 2) return paragraphs.join("\n\n");
 
   let units = paragraphs;
-  if (units.length < 3) {
+  if (units.length < 2) {
     const sentences = source.replace(/\n+/g, " ")
       .match(/[^.!?。！？]+[.!?。！？]+|[^.!?。！？]+$/g);
     units = (sentences || []).map(part => part.trim()).filter(Boolean);
   }
-  if (units.length < 3) {
+  if (units.length < 2) {
     const words = source.replace(/\n+/g, " ").split(/\s+/).filter(Boolean);
-    const chunk = Math.ceil(words.length / 3);
+    const chunk = Math.ceil(words.length / 2);
     units = [
       words.slice(0, chunk).join(" "),
-      words.slice(chunk, chunk * 2).join(" "),
-      words.slice(chunk * 2).join(" ")
+      words.slice(chunk).join(" ")
     ].filter(Boolean);
   }
-  const groups = [[], [], []];
+  const groups = [[], []];
   units.forEach((part, index) => {
-    groups[Math.min(2, Math.floor(index * 3 / units.length))].push(part);
+    groups[Math.min(1, Math.floor(index * 2 / units.length))].push(part);
   });
   return groups.map(group => group.join(" ").trim()).filter(Boolean).join("\n\n");
 }
@@ -531,9 +530,9 @@ app.post("/api/generate", async (req, res) => {
     category === "toss"
       ? "짧은 문장과 줄바꿈으로 리듬을 만들고, 중간중간 '진짜 요물임', '장난 아님', '나도 모르게 눈길 감', 'ㅠㅠ', 'ㅋㅋ' 같은 구어체 반응을 과하지 않게 섞어줘."
       : "",
-    category === "toss" ? "마무리는 친구에게 이야기하듯 가벼운 농담이나 솔직한 한마디로 끝내." : "첫 단락은 관심을 끄는 핵심 요약, 두 번째 단락은 확인된 사실과 배경, 세 번째 단락은 현재 상황과 독자에게 중요한 점으로 마무리해.",
-    "게시글은 반드시 정확히 3개의 단락으로만 작성해. 각 단락은 1~3개의 짧은 문장으로 구성하고, 단락 사이에는 빈 줄을 하나만 넣어. 소제목, 번호, 목록은 쓰지 마.",
-    "첫 번째 단락은 스크롤을 멈추게 하는 후킹 문장으로 시작하고, 두 번째 단락은 확인된 사실이나 상품 특징을 자연스럽게 설명하며, 세 번째 단락은 핵심 의미를 정리해 마무리해.",
+    category === "toss" ? "마무리는 친구에게 이야기하듯 가벼운 농담이나 솔직한 한마디로 끝내." : "첫 단락은 관심을 끄는 핵심 요약, 두 번째 단락은 확인된 사실과 배경 및 독자에게 중요한 점으로 마무리해.",
+    "게시글은 반드시 정확히 2개의 단락으로만 작성해. 각 단락은 1~3개의 짧은 문장으로 구성하고, 단락 사이에는 빈 줄을 하나만 넣어. 소제목, 번호, 목록은 쓰지 마.",
+    "첫 번째 단락은 스크롤을 멈추게 하는 후킹 문장으로 시작하고, 두 번째 단락은 확인된 사실이나 상품 특징과 핵심 의미를 자연스럽게 설명하며 마무리해.",
     category === "toss" ? "상품명, 기능, 용량, 소재, 구성, 가격, 할인, 배송, 재고 등은 링크 페이지에서 확인된 내용만 사용해. 확인되지 않은 구체 정보는 만들지 마." : "",
     category === "toss" ? "사용자가 실제 사용 경험을 제공하지 않았다면 구매하거나 먹어 봤다고 거짓말하지 마. 가족이나 남편의 반응, 직접 사용한 에피소드도 지어내지 마." : "",
     category === "toss" ? "수익 보장, 과장된 효능, 검증되지 않은 24시간 추적·수수료 주장은 넣지 마." : "",
@@ -589,7 +588,7 @@ app.post("/api/generate", async (req, res) => {
     }
   }
 
-  generated = exactlyThreeParagraphs(generated);
+  generated = exactlyTwoParagraphs(generated);
 
   const commentParts = [];
   if (category === "toss") {
