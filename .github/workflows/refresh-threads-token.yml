@@ -2,7 +2,7 @@ name: Refresh Threads access token
 
 on:
   schedule:
-    # Monthly at 03:00 Korea time (18:00 UTC on the 1st).
+    # Monthly at 03:00 Korea time on the 2nd (18:00 UTC on the 1st).
     - cron: "0 18 1 * *"
   workflow_dispatch:
 
