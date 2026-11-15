@@ -8,6 +8,21 @@
 
   function message(value) { $('message').textContent = value; }
   function errorText(err) { return err && err.message ? err.message : String(err); }
+  function diagnosticText(diagnostic) {
+    if (!diagnostic) return '';
+    const parts = [];
+    if (diagnostic.httpStatus != null) parts.push('HTTP ' + diagnostic.httpStatus);
+    if (diagnostic.endpoint) parts.push('요청 경로 ' + diagnostic.endpoint);
+    if (diagnostic.code != null) parts.push('오류 코드 ' + diagnostic.code);
+    if (diagnostic.errorSubcode != null) parts.push('하위 코드 ' + diagnostic.errorSubcode);
+    if (diagnostic.type) parts.push('유형 ' + diagnostic.type);
+    if (diagnostic.fbtraceId) parts.push('FB 추적 ID ' + diagnostic.fbtraceId);
+    if (diagnostic.isTransient != null) parts.push('일시적 오류 ' + diagnostic.isTransient);
+    if (diagnostic.userTitle) parts.push('Meta 안내 ' + diagnostic.userTitle);
+    if (diagnostic.userMessage) parts.push(diagnostic.userMessage);
+    if (diagnostic.transportError) parts.push('연결 오류 ' + diagnostic.transportError);
+    return parts.join(' | ');
+  }
   function extractHttpUrl(value) {
     const match = String(value || '').match(/https?:\/\/[^\s<>"'`]+/i);
     return match ? match[0].replace(/[.,!?;:，。！？；：)\]}》〉」』】]+$/u, '') : '';
@@ -26,7 +41,11 @@
       let result;
       try { result = await response.json(); }
       catch (_) { throw new Error('서버 응답을 읽을 수 없습니다.'); }
-      if (!response.ok) throw new Error(result.error || ('요청 실패 (' + response.status + ')'));
+      if (!response.ok) {
+        const error = new Error(result.error || ('요청 실패 (' + response.status + ')'));
+        if (result.diagnostic) error.diagnostic = result.diagnostic;
+        throw error;
+      }
       return result;
     } catch (err) {
       if (err.name === 'AbortError') throw new Error('요청 시간이 초과됐습니다. 잠시 후 다시 시도해 주세요.');
@@ -223,7 +242,9 @@
         $('comment').value = '';
         message('게시글과 첫 댓글 등록 완료.');
       } else if (result.commentError) {
-        message('게시글은 등록됐지만 첫 댓글 등록은 실패했어요: ' + result.commentError);
+        const diagnostic = diagnosticText(result.commentDiagnostic);
+        message('게시글은 등록됐지만 첫 댓글 등록은 실패했어요: ' + result.commentError +
+          (diagnostic ? ' | Meta 진단: ' + diagnostic : ''));
       } else {
         $('comment').value = '';
         message('게시글 등록 완료.');
@@ -231,7 +252,9 @@
       view = 'posts';
       await refresh();
     } catch (err) {
-      message('게시 실패: ' + errorText(err));
+      const diagnostic = diagnosticText(err.diagnostic);
+      message('게시 실패: ' + errorText(err) +
+        (diagnostic ? ' | Meta 진단: ' + diagnostic : ''));
     } finally {
       button.disabled = false;
     }
