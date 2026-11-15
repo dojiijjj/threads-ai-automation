@@ -223,13 +223,16 @@ function decodeHtml(value) {
 }
 
 
+
 function rssValue(block, tag) {
-  const match = block.match(new RegExp("<" + tag + "(?:\\s[^>]*)?>([\\s\\S]*?)<\\/" + tag + ">", "i"));
-  if (!match) return "";
-  return decodeHtml(match[1]
-    .replace(/^<!\\[CDATA\\[/, "")
-    .replace(/\\]\\]>$/, "")
-    .replace(/<[^>]*>/g, " "));
+  const open = block.match(new RegExp("<" + tag + "(?:\\s[^>]*)?>", "i"));
+  if (!open) return "";
+  const start = open.index + open[0].length;
+  const end = block.toLowerCase().indexOf("</" + tag.toLowerCase() + ">", start);
+  if (end < 0) return "";
+  let value = block.slice(start, end).trim();
+  if (value.startsWith("<![CDATA[")) value = value.slice(9, -3);
+  return decodeHtml(value.replace(/<[^>]*>/g, " "));
 }
 
 async function fetchGoogleNewsFeed(query) {
@@ -248,7 +251,8 @@ async function fetchGoogleNewsFeed(query) {
     });
     if (!response.ok) throw new Error("Google 뉴스 RSS 요청 실패 (" + response.status + ")");
     const xml = await response.text();
-    return (xml.match(/<item(?:\\s[^>]*)?>[\\s\\S]*?<\\/item>/gi) || []).map((block) => ({
+    const blocks = xml.split("<item>").slice(1).map(part => part.split("</item>")[0]);
+    return blocks.map(block => ({
       title: rssValue(block, "title"),
       description: rssValue(block, "description").slice(0, 700),
       source: rssValue(block, "source"),
@@ -274,19 +278,19 @@ async function gatherNewsResearch(topic, todayIssue) {
   }
   const seen = new Set();
   const unique = items.filter(item => {
-    const key = item.title.replace(/\\s+/g, "").toLowerCase();
+    const key = item.title.replace(/\s+/g, "").toLowerCase();
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
-  const start = new Date(seoulDayTimeRange().startTime).getTime();
-  const todayItems = todayIssue
+  const dayStart = new Date(seoulDayTimeRange().startTime).getTime();
+  const currentDayItems = todayIssue
     ? unique.filter(item => {
         const time = Date.parse(item.publishedAt);
-        return Number.isFinite(time) && time >= start;
+        return Number.isFinite(time) && time >= dayStart;
       })
     : unique;
-  const selected = (todayItems.length ? todayItems : unique).slice(0, 14);
+  const selected = (currentDayItems.length ? currentDayItems : unique).slice(0, 14);
   if (!selected.length) {
     throw new Error(todayIssue
       ? "오늘 확인할 수 있는 뉴스 검색 결과가 없습니다. 잠시 후 다시 시도해 주세요."
@@ -449,20 +453,32 @@ app.post("/api/generate", async (req, res) => {
   const linkInfo = req.body.linkInfo && typeof req.body.linkInfo === "object" ? req.body.linkInfo : {};
   const pageTitle = cleanText(linkInfo.title, 240);
   const pageDescription = cleanText(linkInfo.description, 700);
+
   const today = seoulTodayLabel();
+  let newsResearch = [];
+  if (category === "daily") {
+    try {
+      newsResearch = await gatherNewsResearch(subject, todayIssue);
+    } catch (e) {
+      return res.status(502).json({ error: "뉴스 조사 실패: " + e.message });
+    }
+  }
+  const researchText = newsResearch.length ? formatNewsResearch(newsResearch) : "";
+
   const prompt = [
     category === "daily"
       ? "한국어 Threads(스레드)에 올릴 사실 기반 일상·정보 게시글을 작성해."
       : "한국어 Threads(스레드)에 올릴 상품 소개 글을 작성해.",
     category === "daily" ? "오늘 날짜(대한민국 서울 기준): " + today : "",
+    researchText ? "실시간 뉴스 조사 자료:\n" + researchText : "",
     category === "daily" && todayIssue
-      ? "주제 선택: Google 검색을 사용해 오늘 대한민국에서 실제로 많이 보도되고 관심을 받는 뉴스·사건·사회 이슈를 직접 찾아라. 검색 결과의 보도량과 여러 언론의 공통 보도를 바탕으로 글감 하나를 골라라. 사용자가 추가 키워드를 적었다면 그 키워드 분야 안에서 오늘의 주요 이슈를 골라라. 객관적으로 확인할 수 없는 '가장 인기' 순위는 단정하지 마라."
+      ? "주제 선택: 아래 Google 뉴스의 주요 기사 목록에서 오늘 대한민국에서 널리 보도되는 뉴스·사건·사회 이슈를 골라라. 여러 언론사가 함께 다룬 사안을 우선하되 객관적으로 확인할 수 없는 인기 순위는 단정하지 마라."
       : "",
     category === "daily" && !todayIssue
-      ? "조사할 키워드: " + subject + ". Google 검색으로 이 키워드가 가리키는 사건·이슈가 무엇인지 직접 조사해라. 무슨 일이 언제 어디서 발생했는지, 핵심 원인이나 배경, 현재까지 확인된 상황을 신뢰할 만한 자료로 교차 확인해라."
+      ? "조사할 키워드: " + subject + ". 아래 Google 뉴스 검색 결과를 바탕으로 이 키워드가 가리키는 사건·이슈가 무엇인지 정리해라. 보도 날짜와 여러 언론사의 공통 사실을 확인하고 검색 결과에 없는 세부 내용은 추측하지 마라."
       : "",
     category === "daily"
-      ? "검색 결과의 날짜를 확인하고 오래된 사건을 오늘 발생한 것처럼 쓰지 마라. 최소 두 개의 신뢰할 만한 언론·공식 기관 자료가 뒷받침하는 사실만 사용해라. 확인되지 않은 숫자·인명·장소·원인·피해 규모·속보성 주장은 만들지 마라. 보도 내용이 충돌하거나 사실이 불명확하면 그 내용을 빼라. 핵심을 이해하기 쉽게 설명하고 독자에게 왜 중요한지 짚어라. 기사 제목을 베끼지 말고 사실을 네 문장으로 요약해라."
+      ? "아래 기사 목록의 제목·언론사·보도 시각·요약을 조사 자료로 사용해라. 오래된 사건을 오늘 발생한 것처럼 쓰지 마라. 여러 언론사의 보도에서 공통으로 확인되는 사실만 단정하고 확인되지 않은 숫자·인명·장소·원인·피해 규모는 만들지 마라. 요약에 없는 원인이나 경과는 추측하지 말고 확인 가능한 범위에서 설명해라. 기사 제목을 베끼지 마라."
       : "",
     category === "toss" ? "상품명 또는 주제: " + subject : "",
     pageTitle ? "링크 페이지 제목: " + pageTitle : "",
@@ -502,11 +518,6 @@ app.post("/api/generate", async (req, res) => {
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: { maxOutputTokens: 620, temperature: category === "daily" ? 0.55 : 0.8 }
       };
-      if (category === "daily") {
-        const googleSearch = {};
-        if (todayIssue) googleSearch.timeRangeFilter = seoulDayTimeRange();
-        requestBody.tools = [{ google_search: googleSearch }];
-      }
       const r = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY },
@@ -516,14 +527,20 @@ app.post("/api/generate", async (req, res) => {
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
         const detail = data.error?.message || "Gemini 요청 실패 (" + r.status + ")";
-        if (r.status === 429 || r.status === 503 || r.status === 504) {
-          throw new Error("Gemini 서버가 혼잡합니다. 잠시 후 다시 시도해 주세요. (" + detail + ")");
+        if (r.status === 429 && /quota|resource_exhausted|billing|rate limit/i.test(detail)) {
+          throw new Error("Gemini API 할당량 또는 요청 한도 초과입니다. Google AI Studio의 프로젝트별 사용량·결제 상태를 확인해 주세요. (" + detail + ")");
+        }
+        if (r.status === 503 || r.status === 504) {
+          throw new Error("Gemini 서버가 일시적으로 응답하지 않습니다. 잠시 후 다시 시도해 주세요. (" + detail + ")");
+        }
+        if (r.status === 429) {
+          throw new Error("Gemini 요청이 너무 빠릅니다. 잠시 기다렸다 다시 시도해 주세요. (" + detail + ")");
         }
         throw new Error(detail);
       }
       generated = data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("").trim() || "";
       if (!generated) throw new Error("AI가 글을 생성하지 못했습니다.");
-      mode = "AI (" + GEMINI_MODEL + (category === "daily" ? " · Google 검색 조사" : "") + ")";
+      mode = "AI (" + GEMINI_MODEL + (category === "daily" ? " · Google 뉴스 조사 " + newsResearch.length + "건" : "") + ")";
     } catch (e) {
       const detail = e.name === "AbortError"
         ? "검색 및 글 생성 시간이 초과됐습니다. 다시 시도해 주세요."
@@ -549,6 +566,7 @@ app.post("/api/generate", async (req, res) => {
     mode,
     category,
     productName: subject || "오늘의 이슈",
+    researchCount: newsResearch.length,
     links: { affiliateLink }
   });
 });
