@@ -215,6 +215,28 @@ async function publish(text) {
   return { id: result.id, username: me.username };
 }
 
+async function publishReply(text, parentPostId) {
+  if (!text) return null;
+  if (!parentPostId) throw new Error("댓글을 연결할 게시글 ID가 없습니다.");
+  if (!token()) throw new Error("THREADS_ACCESS_TOKEN이 등록되지 않았습니다.");
+  const base = "https://graph.threads.net/v1.0";
+  const me = await threadsRequest(base + "/me?fields=id&access_token=" + encodeURIComponent(token()));
+  const container = await threadsRequest(base + "/" + me.id + "/threads", {
+    method: "POST",
+    body: new URLSearchParams({
+      media_type: "TEXT",
+      text,
+      reply_to_id: parentPostId,
+      access_token: token()
+    })
+  });
+  const result = await threadsRequest(base + "/" + me.id + "/threads_publish", {
+    method: "POST",
+    body: new URLSearchParams({ creation_id: container.id, access_token: token() })
+  });
+  return result.id;
+}
+
 app.get("/api/status", async (req, res) => {
   if (!token()) return res.json({ configured: false });
   try {
@@ -308,14 +330,15 @@ app.post("/api/generate", async (req, res) => {
     }
   }
 
-  const output = [generated.trim()];
+  const commentParts = [];
   if (category === "toss") {
-    output.push("토스에서 상품 확인하기\n" + affiliateLink);
-    output.push(DISCLOSURES.toss);
+    commentParts.push("상품 링크\n" + affiliateLink);
+    commentParts.push(DISCLOSURES.toss);
   }
 
   res.json({
-    text: output.join("\n\n"),
+    text: generated.trim(),
+    commentText: commentParts.join("\n\n"),
     mode,
     category,
     productName: subject,
@@ -325,15 +348,31 @@ app.post("/api/generate", async (req, res) => {
 
 app.post("/api/publish", async (req, res) => {
   const text = cleanText(req.body.text, 5000);
+  const commentText = cleanText(req.body.commentText, 2000);
   const category = ["toss", "daily"].includes(req.body.category) ? req.body.category : "daily";
   if (!text) return res.status(400).json({ error: "게시글 내용을 입력해 주세요." });
   try {
     const result = await publish(text);
+    let replyId = null;
+    let commentStatus = commentText ? "댓글 등록 대기" : "댓글 없음";
+    let commentError = "";
+    if (commentText) {
+      try {
+        replyId = await publishReply(commentText, result.id);
+        commentStatus = "댓글 게시 완료";
+      } catch (e) {
+        commentStatus = "댓글 등록 실패";
+        commentError = e.message;
+      }
+    }
     const createdAt = new Date().toISOString();
-    const post = { id: result.id, text, username: result.username, category, status: "게시 완료", createdAt };
+    const post = {
+      id: result.id, text, username: result.username, category,
+      status: "게시 완료", commentStatus, replyId, createdAt
+    };
     store.posts.unshift(post);
     save();
-    res.json({ ok: true, post });
+    res.json({ ok: true, post, commentPosted: Boolean(replyId), commentError });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
@@ -341,13 +380,14 @@ app.post("/api/publish", async (req, res) => {
 
 app.post("/api/schedule", (req, res) => {
   const text = cleanText(req.body.text, 5000);
+  const commentText = cleanText(req.body.commentText, 2000);
   const category = ["toss", "daily"].includes(req.body.category) ? req.body.category : "daily";
   const at = new Date(req.body.at);
   if (!text) return res.status(400).json({ error: "게시글 내용을 먼저 작성해 주세요." });
   if (Number.isNaN(at.getTime()) || at.getTime() <= Date.now()) return res.status(400).json({ error: "미래 시간을 선택해 주세요." });
   const item = {
     id: String(Date.now()) + Math.random().toString(16).slice(2),
-    text, category, at: at.toISOString(), status: "예약 대기"
+    text, commentText, category, at: at.toISOString(), status: "예약 대기"
   };
   store.scheduled.push(item);
   store.scheduled.sort((a, b) => new Date(a.at) - new Date(b.at));
@@ -368,13 +408,30 @@ async function runScheduler() {
     save();
     try {
       const result = await publish(item.text);
-      const completedAt = new Date().toISOString();
-      item.status = "게시 완료";
       item.postId = result.id;
+      let replyId = null;
+      let commentError = "";
+      if (item.commentText) {
+        try {
+          replyId = await publishReply(item.commentText, result.id);
+          item.commentStatus = "댓글 게시 완료";
+        } catch (e) {
+          commentError = e.message;
+          item.commentStatus = "댓글 등록 실패";
+        }
+      } else {
+        item.commentStatus = "댓글 없음";
+      }
+      const completedAt = new Date().toISOString();
+      item.status = commentError ? "게시 완료 (댓글 등록 실패)" : "게시 완료";
+      item.replyId = replyId;
+      item.commentError = commentError;
       item.completedAt = completedAt;
       store.posts.unshift({
         id: result.id, text: item.text, username: result.username,
-        category: item.category || "daily", status: "예약 게시 완료", createdAt: completedAt
+        category: item.category || "daily",
+        status: commentError ? "예약 게시 완료 (댓글 실패)" : "예약 게시 완료",
+        commentStatus: item.commentStatus, replyId, createdAt: completedAt
       });
     } catch (e) {
       item.status = "실패: " + e.message;
