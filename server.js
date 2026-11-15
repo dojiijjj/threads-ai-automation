@@ -736,7 +736,7 @@ app.post("/api/generate", async (req, res) => {
   }
 
   if (entertainmentNews && !generated.trim().startsWith(entertainmentTitle)) {
-    generated = entertainmentTitle + "\\n" + generated.trim();
+    generated = entertainmentTitle + "\n" + generated.trim();
   }
   generated = exactlyTwoParagraphs(generated);
 
