@@ -174,7 +174,7 @@
     button.disabled = true;
     $('linkInfo').textContent = '상품 페이지 정보를 읽는 중...';
     $('productImageWrap').classList.add('hidden');
-    productImageDownloadUrl = '';
+    productImagePublishSource = '';
     $('productImage').removeAttribute('src');
     try {
       linkInfo = await api('/api/link-preview?url=' + encodeURIComponent(url));
@@ -200,7 +200,7 @@
 
   $('productImage').addEventListener('error', () => {
     $('productImageWrap').classList.add('hidden');
-    productImageDownloadUrl = '';
+    productImagePublishSource = '';
     $('linkInfo').textContent += ' 상품 사진을 불러오지 못했습니다.';
   });
 
