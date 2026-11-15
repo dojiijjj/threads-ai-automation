@@ -101,10 +101,11 @@ app.post("/api/images",async(req,res)=>{
   const images=[],seen=new Set();
   for(const p of productImages){
    try{
-    const u=new URL(p.url);
+    const rawUrl=typeof p==="string"?p:p.url;
+    const u=new URL(rawUrl);
     if(u.protocol!=="https:"||u.username||u.password||seen.has(u.href))continue;
     seen.add(u.href);
-    images.push({id:"product-"+images.length,title:clean(p.title||"상품 대표 이미지",180),thumbUrl:u.href,originalUrl:u.href,sourceUrl:productUrl||u.origin,artist:"상품 판매 페이지",license:"판매처 이미지 이용 조건 확인 필요",licenseUrl:"",description:"상품 페이지에서 가져온 대표 이미지",kind:"product"});
+    images.push({id:"product-"+images.length,title:clean((typeof p==="object"&&p.title)||"상품 대표 이미지",180),thumbUrl:u.href,originalUrl:u.href,sourceUrl:productUrl||u.origin,artist:"상품 판매 페이지",license:"판매처 이미지 이용 조건 확인 필요",licenseUrl:"",description:"상품 페이지에서 가져온 대표 이미지",kind:"product"});
    }catch(_){}
   }
   const batches=await Promise.all(queries.map(q=>searchCommons(q).catch(e=>{console.warn("Commons search:",q,e.message);return [];})));
