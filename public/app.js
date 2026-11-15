@@ -77,6 +77,28 @@
       addText(box, 'span', 'pill', '[' + categoryLabel(item.category || 'daily') + '] ' + (item.status || '') + (shownTime ? ' · ' + shownTime : ''));
       if (item.commentStatus) addText(box, 'span', 'pill', ' · 첫 댓글: ' + item.commentStatus);
       addText(box, 'p', '', item.text || '');
+      if (view === 'posts' && item.commentStatus === '댓글 등록 실패' && item.commentText) {
+        const retry = document.createElement('button');
+        retry.className = 'secondary';
+        retry.type = 'button';
+        retry.textContent = '첫 댓글 다시 등록';
+        retry.addEventListener('click', async () => {
+          retry.disabled = true;
+          message('첫 댓글 다시 등록 중...');
+          try {
+            await api('/api/reply', {
+              method: 'POST',
+              body: JSON.stringify({ postId: item.id, text: item.commentText })
+            });
+            message('첫 댓글을 등록했습니다.');
+            await refresh();
+          } catch (err) {
+            message('댓글 등록 실패: ' + errorText(err));
+            retry.disabled = false;
+          }
+        });
+        box.appendChild(retry);
+      }
       if (view === 'scheduled' && item.status === '예약 대기') {
         const cancel = document.createElement('button');
         cancel.className = 'danger';
