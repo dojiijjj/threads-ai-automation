@@ -470,6 +470,7 @@ app.post("/api/generate", async (req, res) => {
   const productName = cleanText(req.body.productName, 240);
   const tone = cleanText(req.body.tone || "생활형 후기형", 60);
   const todayIssue = category === "daily" && req.body.todayIssue === true;
+  const todayDaily = category === "daily" && req.body.todayDaily === true;
   let affiliateLink = "";
   try {
     affiliateLink = validateHttpUrl(cleanText(req.body.affiliateLink, 2000));
@@ -478,7 +479,7 @@ app.post("/api/generate", async (req, res) => {
   }
 
   const subject = productName || topic;
-  if (!subject && !todayIssue) return res.status(400).json({ error: "조사할 키워드나 주제를 입력해 주세요." });
+  if (!subject && !todayIssue && !todayDaily) return res.status(400).json({ error: "조사할 키워드나 주제를 입력해 주세요." });
   if (category !== "daily" && !affiliateLink) {
     return res.status(400).json({ error: "토스 쉐어링크를 입력해 주세요." });
   }
@@ -492,7 +493,7 @@ app.post("/api/generate", async (req, res) => {
 
   const today = seoulTodayLabel();
   let newsResearch = [];
-  if (category === "daily") {
+  if (category === "daily" && !todayDaily) {
     try {
       newsResearch = await gatherNewsResearch(subject, todayIssue);
     } catch (e) {
@@ -503,17 +504,17 @@ app.post("/api/generate", async (req, res) => {
 
   const prompt = [
     category === "daily"
-      ? "한국어 Threads(스레드)에 올릴 사실 기반 일상·정보 게시글을 작성해."
+      ? (todayDaily ? "한국어 Threads(스레드)에 올릴 친근하고 공감 가는 일상 수다 글을 작성해." : "한국어 Threads(스레드)에 올릴 사실 기반 일상·정보 게시글을 작성해.")
       : "한국어 Threads(스레드)에 올릴 상품 소개 글을 작성해.",
     category === "daily" ? "오늘 날짜(대한민국 서울 기준): " + today : "",
     researchText ? "실시간 뉴스 조사 자료:\n" + researchText : "",
     category === "daily" && todayIssue
       ? "주제 선택: 아래 Google 뉴스의 주요 기사 목록에서 오늘 대한민국에서 널리 보도되는 뉴스·사건·사회 이슈를 골라라. 여러 언론사가 함께 다룬 사안을 우선하되 객관적으로 확인할 수 없는 인기 순위는 단정하지 마라."
       : "",
-    category === "daily" && !todayIssue
+    category === "daily" && !todayIssue && !todayDaily
       ? "조사할 키워드: " + subject + ". 아래 Google 뉴스 검색 결과를 바탕으로 이 키워드가 가리키는 사건·이슈가 무엇인지 정리해라. 보도 날짜와 여러 언론사의 공통 사실을 확인하고 검색 결과에 없는 세부 내용은 추측하지 마라."
       : "",
-    category === "daily"
+    category === "daily" && !todayDaily
       ? "아래 기사 목록의 제목·언론사·보도 시각·요약을 조사 자료로 사용해라. 오래된 사건을 오늘 발생한 것처럼 쓰지 마라. 여러 언론사의 보도에서 공통으로 확인되는 사실만 단정하고 확인되지 않은 숫자·인명·장소·원인·피해 규모는 만들지 마라. 요약에 없는 원인이나 경과는 추측하지 말고 확인 가능한 범위에서 설명해라. 기사 제목을 베끼지 마라."
       : "",
     category === "toss" ? "상품명 또는 주제: " + subject : "",
@@ -522,7 +523,8 @@ app.post("/api/generate", async (req, res) => {
     "게시물 유형: " + (category === "toss" ? "토스 쉐어링크 상품 소개" : "일상/정보 게시글"),
     "말투 설정: " + tone,
     category === "daily"
-      ? "말투는 친구에게 알려주듯 자연스럽고 이해하기 쉽게. 사실을 가볍게 왜곡하거나 선정적으로 과장하지 마."
+      ? (todayDaily ? "친구와 가볍게 수다 떨듯 자연스럽고 편하게 써. 소소한 일상에서 누구나 공감할 만한 순간, 귀찮음, 날씨, 잠, 식사, 주말, 집안일 같은 소재를 하나 골라 이야기해. 과장된 감정이나 억지 교훈은 피하고, 실제 작성자의 개인 경험인 것처럼 특정 경험을 지어내지는 마. ㅋㅋ, ㅠㅠ 같은 표현은 자연스러울 때만 사용해."
+        : "말투는 친구에게 알려주듯 자연스럽고 이해하기 쉽게. 사실을 가볍게 왜곡하거나 선정적으로 과장하지 마.")
       : "핵심 말투는 친구에게 수다 떨듯 편하고 생생한 생활형 후기 스타일이야. 딱딱한 광고 문구나 쇼핑몰 상세페이지 말투는 쓰지 마.",
     category === "toss"
       ? "예시의 문체 특징을 적용해: '이런 거 숨겨두는 게 국룰인 거 알지? ㅋㅋ'처럼 일상 공감으로 시작하고, 상품을 발견한 순간의 반응을 자연스럽게 말한 다음, 확인된 특징을 감각적이고 구체적인 표현으로 풀어줘."
@@ -531,6 +533,7 @@ app.post("/api/generate", async (req, res) => {
       ? "짧은 문장과 줄바꿈으로 리듬을 만들고, 중간중간 '진짜 요물임', '장난 아님', '나도 모르게 눈길 감', 'ㅠㅠ', 'ㅋㅋ' 같은 구어체 반응을 과하지 않게 섞어줘."
       : "",
     category === "toss" ? "마무리는 친구에게 이야기하듯 가벼운 농담이나 솔직한 한마디로 끝내." : "첫 단락은 관심을 끄는 핵심 요약, 두 번째 단락은 확인된 사실과 배경 및 독자에게 중요한 점으로 마무리해.",
+    todayDaily ? "억지스럽지 않은 일상 수다 글로 작성하고, 독자에게 말을 거는 듯한 자연스러운 호흡을 유지해." : "",
     "게시글은 반드시 정확히 2개의 단락으로만 작성해. 각 단락은 1~3개의 짧은 문장으로 구성하고, 단락 사이에는 빈 줄을 하나만 넣어. 소제목, 번호, 목록은 쓰지 마.",
     "첫 번째 단락은 스크롤을 멈추게 하는 후킹 문장으로 시작하고, 두 번째 단락은 확인된 사실이나 상품 특징과 핵심 의미를 자연스럽게 설명하며 마무리해.",
     category === "toss" ? "상품명, 기능, 용량, 소재, 구성, 가격, 할인, 배송, 재고 등은 링크 페이지에서 확인된 내용만 사용해. 확인되지 않은 구체 정보는 만들지 마." : "",
@@ -576,7 +579,7 @@ app.post("/api/generate", async (req, res) => {
       }
       generated = data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("").trim() || "";
       if (!generated) throw new Error("AI가 글을 생성하지 못했습니다.");
-      mode = "AI (" + GEMINI_MODEL + (category === "daily" ? " · Google 뉴스 조사 " + newsResearch.length + "건" : "") + ")";
+      mode = "AI (" + GEMINI_MODEL + (category === "daily" ? (todayDaily ? " · 오늘의 일상" : " · Google 뉴스 조사 " + newsResearch.length + "건") : "") + ")";
     } catch (e) {
       const detail = e.name === "AbortError"
         ? "검색 및 글 생성 시간이 초과됐습니다. 다시 시도해 주세요."
@@ -601,7 +604,7 @@ app.post("/api/generate", async (req, res) => {
     commentText: commentParts.join("\n\n"),
     mode,
     category,
-    productName: subject || "오늘의 이슈",
+    productName: subject || (todayDaily ? "오늘의 일상" : "오늘의 이슈"),
     researchCount: newsResearch.length,
     links: { affiliateLink }
   });
