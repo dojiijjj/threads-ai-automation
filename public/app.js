@@ -206,21 +206,21 @@
   });
 
 
-  async function generatePost(todayIssue, todayDaily) {
-    const button = todayIssue ? $('todayIssue') : (todayDaily ? $('todayDaily') : $('generate'));
+  async function generatePost(todayDaily) {
+    const button = todayDaily ? $('todayDaily') : $('generate');
     const topic = $('topic').value.trim();
-    if (!todayIssue && !todayDaily && !topic) {
+    if (!todayDaily && !topic) {
       message('조사할 키워드를 입력해 주세요.');
       $('topic').focus();
       return;
     }
-    if (!todayIssue && currentCategory !== 'daily' && !$('affiliateLink').value.trim()) {
+    if (!todayDaily && currentCategory !== 'daily' && !$('affiliateLink').value.trim()) {
       message('제휴 링크를 붙여 넣어 주세요.');
       $('affiliateLink').focus();
       return;
     }
     button.disabled = true;
-    message(todayIssue ? '오늘의 주요 뉴스와 사건 기사를 모으는 중...' : (todayDaily ? '오늘의 일상 글을 만드는 중...' : (currentCategory === 'daily' ? 'Google 뉴스에서 키워드 관련 기사를 조사 중...' : 'AI 글 생성 중...')));
+    message(todayDaily ? '오늘의 일상 글을 만드는 중...' : 'AI 글 생성 중...');
     try {
       const result = await api('/api/generate', {
         method: 'POST',
@@ -228,7 +228,6 @@
           category: currentCategory,
           topic,
           productName: currentCategory === 'daily' ? '' : topic,
-          todayIssue: Boolean(todayIssue),
           todayDaily: Boolean(todayDaily),
           tone: $('tone').value,
           affiliateLink: $('affiliateLink').value,
@@ -237,7 +236,7 @@
       });
       $('post').value = result.text || '';
       $('comment').value = result.commentText || '';
-      message((result.mode || 'AI') + '으로 2단락 게시글' + (todayDaily ? '을 만들었습니다.' : (todayIssue ? '을 만들었습니다.' : '을 생성했습니다.')));
+      message((result.mode || 'AI') + ' 게시글을 생성했습니다.');
     } catch (err) {
       message('글 생성 실패: ' + errorText(err));
     } finally {
@@ -246,7 +245,7 @@
   }
 
   $('generate').addEventListener('click', () => generatePost(false));
-  $('todayDaily').addEventListener('click', () => generatePost(false, true));
+  $('todayDaily').addEventListener('click', () => generatePost(true));
 
   async function generateShortText(kind) {
     const button = kind === 'emotional' ? $('emotionalQuote') : $('wiseSaying');
