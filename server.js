@@ -346,11 +346,48 @@ app.get("/api/link-preview", async (req, res) => {
   }
 });
 
+function safeThreadsEndpoint(rawUrl) {
+  try { return new URL(rawUrl).pathname; }
+  catch (_) { return "Threads API"; }
+}
+
 async function threadsRequest(url, options = {}) {
-  const response = await fetch(url, options);
-  const data = await response.json().catch(() => ({}));
+  let response;
+  try {
+    response = await fetch(url, options);
+  } catch (cause) {
+    const error = new Error("Threads API 연결 실패: " + (cause.message || "네트워크 오류"));
+    error.threadsApi = {
+      endpoint: safeThreadsEndpoint(url),
+      transportError: cause.name || "NetworkError"
+    };
+    throw error;
+  }
+
+  const rawBody = await response.text().catch(() => "");
+  let data = {};
+  try { data = rawBody ? JSON.parse(rawBody) : {}; }
+  catch (_) { data = {}; }
+
   if (!response.ok || data.error) {
-    throw new Error(data.error?.message || data.error_description || "Threads API 요청 실패 (" + response.status + ")");
+    const apiError = data.error && typeof data.error === "object" ? data.error : {};
+    const error = new Error(
+      apiError.message ||
+      data.error_description ||
+      (rawBody.slice(0, 300) || "Threads API 요청 실패 (" + response.status + ")")
+    );
+    error.threadsApi = {
+      httpStatus: response.status,
+      endpoint: safeThreadsEndpoint(url),
+      code: apiError.code ?? data.code ?? null,
+      errorSubcode: apiError.error_subcode ?? data.error_subcode ?? null,
+      type: apiError.type ?? data.type ?? null,
+      fbtraceId: apiError.fbtrace_id ?? data.fbtrace_id ?? null,
+      isTransient: apiError.is_transient ?? null,
+      userTitle: apiError.error_user_title ?? null,
+      userMessage: apiError.error_user_msg ?? null
+    };
+    throw error;
   }
   return data;
 }
@@ -581,6 +618,7 @@ app.post("/api/publish", async (req, res) => {
     let replyId = null;
     let commentStatus = commentText ? "댓글 등록 대기" : "댓글 없음";
     let commentError = "";
+    let commentDiagnostic = null;
     if (commentText) {
       try {
         replyId = await publishReply(commentText, result.id);
@@ -588,6 +626,7 @@ app.post("/api/publish", async (req, res) => {
       } catch (e) {
         commentStatus = "댓글 등록 실패";
         commentError = e.message;
+        commentDiagnostic = e.threadsApi || null;
       }
     }
     const createdAt = new Date().toISOString();
@@ -597,9 +636,16 @@ app.post("/api/publish", async (req, res) => {
     };
     store.posts.unshift(post);
     save();
-    res.json({ ok: true, post, commentPosted: Boolean(replyId), commentError });
+    res.json({
+      ok: true, post, commentPosted: Boolean(replyId), commentError, commentDiagnostic
+    });
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    const diagnostic = e.threadsApi || null;
+    console.error("Threads publish failed:", JSON.stringify({
+      message: e.message,
+      diagnostic
+    }));
+    res.status(400).json({ error: e.message, diagnostic });
   }
 });
 
