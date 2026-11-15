@@ -11,8 +11,7 @@ async function api(url,opt={}){
 }
 function safeText(v){return String(v??"");}
 function escapeHtml(v){return safeText(v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
-function cleanKeywordList(){return $("keywords").value.split(/[,
-]/).map(x=>x.trim()).filter(Boolean).slice(0,3);}
+function cleanKeywordList(){return $("keywords").value.split(/[,\n]/).map(x=>x.trim()).filter(Boolean).slice(0,3);}
 function toDataUrl(blob){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(new Error("사진을 읽지 못했습니다."));reader.readAsDataURL(blob);});}
 async function compressPhoto(file){
  if(!/^image\/(jpeg|png|webp)$/i.test(file.type))throw new Error("JPG, PNG, WEBP 사진만 첨부할 수 있습니다.");
