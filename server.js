@@ -631,7 +631,7 @@ function extractCommunityArticleText(html, sourceId) {
     theqoo: ["xe_content", "rd_body", "article"]
   }[sourceId] || ["article", "content", "view_content"];
   for (const selector of selectors) {
-    const pattern = new RegExp("<([a-z0-9]+)\\b[^>]*class=[\\"\'][^\\"\']*(?:" + selector + ")[^\\"\']*[\\"\'][^>]*>([\\s\\S]*?)<\\/\\1>", "i");
+    const pattern = new RegExp('<([a-z0-9]+)\\b[^>]*class="[^"]*' + selector + '[^"]*"[^>]*>([\\s\\S]*?)<\\/\\1>', "i");
     const match = html.match(pattern);
     if (match && match[2]) {
       const text = stripCommunityHtml(match[2]);
