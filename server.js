@@ -334,7 +334,7 @@ app.get("/api/link-preview", async (req, res) => {
   try {
     const url = validateHttpUrl(raw);
     const html = await fetchPublicHtml(url);
-    const titleMatch = html.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i);
+    const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
     const title = htmlMeta(html, "og:title") || htmlMeta(html, "twitter:title") ||
       decodeHtml(titleMatch ? titleMatch[1].replace(/<[^>]+>/g, " ") : "");
     const description = htmlMeta(html, "og:description") || htmlMeta(html, "description") || htmlMeta(html, "twitter:description");
