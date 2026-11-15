@@ -223,96 +223,6 @@ function decodeHtml(value) {
 
 
 
-function rssValue(block, tag) {
-  const open = block.match(new RegExp("<" + tag + "(?:\\s[^>]*)?>", "i"));
-  if (!open) return "";
-  const start = open.index + open[0].length;
-  const end = block.toLowerCase().indexOf("</" + tag.toLowerCase() + ">", start);
-  if (end < 0) return "";
-  let value = block.slice(start, end).trim();
-  if (value.startsWith("<![CDATA[")) value = value.slice(9, -3);
-  return decodeHtml(value).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-}
-
-async function fetchGoogleNewsFeed(query) {
-  const url = query
-    ? "https://news.google.com/rss/search?q=" + encodeURIComponent(query) + "&hl=ko&gl=KR&ceid=KR:ko"
-    : "https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko";
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12000);
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; ThreadsInfoWriter/1.0)",
-        "Accept": "application/rss+xml, application/xml, text/xml"
-      }
-    });
-    if (!response.ok) throw new Error("Google 뉴스 RSS 요청 실패 (" + response.status + ")");
-    const xml = await response.text();
-    const blocks = Array.from(xml.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi), match => match[1]);
-    return blocks.map(block => ({
-      title: rssValue(block, "title"),
-      description: rssValue(block, "description").slice(0, 700),
-      source: rssValue(block, "source"),
-      link: rssValue(block, "link"),
-      publishedAt: rssValue(block, "pubDate")
-    })).filter(item => item.title);
-  } catch (e) {
-    if (e.name === "AbortError") throw new Error("뉴스 검색 시간이 초과됐습니다.");
-    throw e;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function gatherNewsResearch(topic, todayIssue) {
-  const queries = todayIssue
-    ? [null, "대한민국 주요 뉴스 when:1d", "사건 사고 when:1d", "사회 이슈 when:1d"]
-    : [topic, topic + " 사건 최신"];
-  const results = await Promise.allSettled(queries.map(query => fetchGoogleNewsFeed(query)));
-  const items = [];
-  for (const result of results) {
-    if (result.status === "fulfilled") items.push(...result.value);
-  }
-  const seen = new Set();
-  const unique = items.filter(item => {
-    const key = item.title.replace(/\s+/g, "").toLowerCase();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-  const dayStart = new Date(seoulDayTimeRange().startTime).getTime();
-  const currentDayItems = todayIssue
-    ? unique.filter(item => {
-        const time = Date.parse(item.publishedAt);
-        return Number.isFinite(time) && time >= dayStart;
-      })
-    : unique;
-  const selected = (todayIssue ? currentDayItems : unique).slice(0, 14);
-  if (!selected.length) {
-    throw new Error(todayIssue
-      ? "오늘 확인할 수 있는 뉴스 검색 결과가 없습니다. 잠시 후 다시 시도해 주세요."
-      : "해당 키워드의 뉴스 검색 결과가 없습니다. 다른 표현으로 다시 입력해 주세요.");
-  }
-  return selected;
-}
-
-function formatNewsResearch(items) {
-  return items.map((item, index) => {
-    const date = item.publishedAt ? new Date(item.publishedAt) : null;
-    const time = date && !Number.isNaN(date.getTime())
-      ? date.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })
-      : "보도 시각 미확인";
-    return [
-      (index + 1) + ". " + item.title,
-      "언론사: " + (item.source || "출처 표기 없음"),
-      "보도 시각: " + time,
-      item.description ? "RSS 요약: " + item.description : ""
-    ].filter(Boolean).join("\n");
-  }).join("\n\n");
-}
-
 function htmlMeta(html, key) {
   const tags = html.match(/<meta\b[^>]*>/gi) || [];
   for (const tag of tags) {
@@ -556,7 +466,6 @@ app.post("/api/generate", async (req, res) => {
   const topic = cleanText(req.body.topic, 300);
   const productName = cleanText(req.body.productName, 240);
   const tone = cleanText(req.body.tone || "생활형 후기형", 60);
-  const todayIssue = false;
   const todayDaily = category === "daily" && req.body.todayDaily === true;
   const shortTextType = category === "daily" && ["emotional", "proverb"].includes(req.body.shortTextType) ? req.body.shortTextType : "";
   let affiliateLink = "";
@@ -567,7 +476,7 @@ app.post("/api/generate", async (req, res) => {
   }
 
   const subject = productName || topic;
-  if (!subject && !todayIssue && !todayDaily && !shortTextType) return res.status(400).json({ error: "주제를 입력해 주세요." });
+  if (!subject && !todayDaily && !shortTextType) return res.status(400).json({ error: "주제를 입력해 주세요." });
   if (category !== "daily" && !affiliateLink) {
     return res.status(400).json({ error: "토스 쉐어링크를 입력해 주세요." });
   }
@@ -588,9 +497,6 @@ app.post("/api/generate", async (req, res) => {
       : "한국어 Threads(스레드)에 올릴 상품 소개 글을 작성해.",
     category === "daily" ? "오늘 날짜(대한민국 서울 기준): " + today : "",
     researchText ? "실시간 뉴스 조사 자료:\n" + researchText : "",
-    category === "daily" && todayIssue
-      ? "주제 선택: 아래 Google 뉴스의 주요 기사 목록에서 오늘 대한민국에서 널리 보도되는 뉴스·사건·사회 이슈를 골라라. 여러 언론사가 함께 다룬 사안을 우선하되 객관적으로 확인할 수 없는 인기 순위는 단정하지 마라."
-      : "",
     category === "daily" && !todayDaily && !shortTextType ? "사용자가 입력한 주제: " + subject + ". 최신 뉴스나 실시간 조사를 했다고 주장하지 말고, 일반적으로 알려진 내용을 이해하기 쉽게 풀어 써." : "",
     category === "toss" ? "상품명 또는 주제: " + subject : "",
     pageTitle ? "링크 페이지 제목: " + pageTitle : "",
@@ -704,7 +610,6 @@ app.post("/api/generate", async (req, res) => {
     mode,
     category,
     productName: subject || (todayDaily ? "오늘의 일상" : shortTextType === "emotional" ? "감성글귀" : shortTextType === "proverb" ? "명언" : ""),
-    researchCount: 0,
     links: { affiliateLink }
   });
 });
