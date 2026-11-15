@@ -11,7 +11,7 @@ app.use(express.static(path.join(__dirname, "public")));
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, "data.json");
 const GEMINI_MODEL = "gemini-3.5-flash-lite";
-const GEMINI_TIMEOUT_MS = 25000;
+const GEMINI_TIMEOUT_MS = 65000;
 const LINK_TIMEOUT_MS = 9000;
 const MAX_HTML_BYTES = 1200000;
 
@@ -92,6 +92,21 @@ async function waitForThreadContainer(containerId) {
 
 function cleanText(value, max = 2000) {
   return String(value || "").trim().slice(0, max);
+}
+function seoulDayTimeRange() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit"
+  }).formatToParts(new Date());
+  const date = Object.fromEntries(parts.filter(x => x.type !== "literal").map(x => [x.type, x.value]));
+  const start = new Date(date.year + "-" + date.month + "-" + date.day + "T00:00:00+09:00");
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return { startTime: start.toISOString(), endTime: end.toISOString() };
+}
+
+function seoulTodayLabel() {
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "long", day: "numeric", weekday: "long"
+  }).format(new Date());
 }
 
 // 설명 문장이나 다른 글자와 함께 붙여 넣어도 첫 번째 http(s) URL만 추출합니다.
@@ -320,11 +335,13 @@ app.get("/api/reply-status", async (req, res) => {
 
 app.get("/api/posts", (req, res) => res.json({ posts: store.posts, scheduled: store.scheduled }));
 
+
 app.post("/api/generate", async (req, res) => {
   const category = ["toss", "daily"].includes(req.body.category) ? req.body.category : "daily";
   const topic = cleanText(req.body.topic, 300);
   const productName = cleanText(req.body.productName, 240);
   const tone = cleanText(req.body.tone || "생활형 후기형", 60);
+  const todayIssue = category === "daily" && req.body.todayIssue === true;
   let affiliateLink = "";
   try {
     affiliateLink = validateHttpUrl(cleanText(req.body.affiliateLink, 2000));
@@ -333,33 +350,55 @@ app.post("/api/generate", async (req, res) => {
   }
 
   const subject = productName || topic;
-  if (!subject) return res.status(400).json({ error: "상품명 또는 게시글 주제를 입력해 주세요." });
+  if (!subject && !todayIssue) return res.status(400).json({ error: "조사할 키워드나 주제를 입력해 주세요." });
   if (category !== "daily" && !affiliateLink) {
-    return res.status(400).json({ error: category === "toss" ? "토스 쉐어링크를 입력해 주세요." : "쿠팡 파트너스 링크를 입력해 주세요." });
+    return res.status(400).json({ error: "토스 쉐어링크를 입력해 주세요." });
+  }
+  if (category === "daily" && !process.env.GEMINI_API_KEY) {
+    return res.status(503).json({ error: "실시간 조사 기능을 사용하려면 Railway에 GEMINI_API_KEY가 등록되어 있어야 합니다." });
   }
 
   const linkInfo = req.body.linkInfo && typeof req.body.linkInfo === "object" ? req.body.linkInfo : {};
   const pageTitle = cleanText(linkInfo.title, 240);
   const pageDescription = cleanText(linkInfo.description, 700);
+  const today = seoulTodayLabel();
   const prompt = [
-    "한국어 Threads(스레드)에 올릴 상품 소개 글을 작성해.",
-    "상품명 또는 주제: " + subject,
+    category === "daily"
+      ? "한국어 Threads(스레드)에 올릴 사실 기반 일상·정보 게시글을 작성해."
+      : "한국어 Threads(스레드)에 올릴 상품 소개 글을 작성해.",
+    category === "daily" ? "오늘 날짜(대한민국 서울 기준): " + today : "",
+    category === "daily" && todayIssue
+      ? "주제 선택: Google 검색을 사용해 오늘 대한민국에서 실제로 많이 보도되고 관심을 받는 뉴스·사건·사회 이슈를 직접 찾아라. 검색 결과의 보도량과 여러 언론의 공통 보도를 바탕으로 글감 하나를 골라라. 사용자가 추가 키워드를 적었다면 그 키워드 분야 안에서 오늘의 주요 이슈를 골라라. 객관적으로 확인할 수 없는 '가장 인기' 순위는 단정하지 마라."
+      : "",
+    category === "daily" && !todayIssue
+      ? "조사할 키워드: " + subject + ". Google 검색으로 이 키워드가 가리키는 사건·이슈가 무엇인지 직접 조사해라. 무슨 일이 언제 어디서 발생했는지, 핵심 원인이나 배경, 현재까지 확인된 상황을 신뢰할 만한 자료로 교차 확인해라."
+      : "",
+    category === "daily"
+      ? "검색 결과의 날짜를 확인하고 오래된 사건을 오늘 발생한 것처럼 쓰지 마라. 최소 두 개의 신뢰할 만한 언론·공식 기관 자료가 뒷받침하는 사실만 사용해라. 확인되지 않은 숫자·인명·장소·원인·피해 규모·속보성 주장은 만들지 마라. 보도 내용이 충돌하거나 사실이 불명확하면 그 내용을 빼라. 핵심을 이해하기 쉽게 설명하고 독자에게 왜 중요한지 짚어라. 기사 제목을 베끼지 말고 사실을 네 문장으로 요약해라."
+      : "",
+    category === "toss" ? "상품명 또는 주제: " + subject : "",
     pageTitle ? "링크 페이지 제목: " + pageTitle : "",
     pageDescription ? "링크 페이지 설명: " + pageDescription : "",
     "게시물 유형: " + (category === "toss" ? "토스 쉐어링크 상품 소개" : "일상/정보 게시글"),
     "말투 설정: " + tone,
-    "핵심 말투는 친구에게 수다 떨듯 편하고 생생한 생활형 후기 스타일이야. 딱딱한 광고 문구나 쇼핑몰 상세페이지 말투는 쓰지 마.",
-    "예시의 문체 특징을 적용해: '이런 거 숨겨두는 게 국룰인 거 알지? ㅋㅋ'처럼 일상 공감으로 시작하고, 상품을 발견한 순간의 반응을 자연스럽게 말한 다음, 확인된 특징을 감각적이고 구체적인 표현으로 풀어줘.",
-    "짧은 문장과 줄바꿈으로 리듬을 만들고, 중간중간 '진짜 요물임', '장난 아님', '나도 모르게 눈길 감', 'ㅠㅠ', 'ㅋㅋ' 같은 구어체 반응을 과하지 않게 섞어줘.",
-    "마무리는 친구에게 이야기하듯 가벼운 농담이나 솔직한 한마디로 끝내. 이모티콘과 느낌표를 연달아 남발하지 마.",
+    category === "daily"
+      ? "말투는 친구에게 알려주듯 자연스럽고 이해하기 쉽게. 사실을 가볍게 왜곡하거나 선정적으로 과장하지 마."
+      : "핵심 말투는 친구에게 수다 떨듯 편하고 생생한 생활형 후기 스타일이야. 딱딱한 광고 문구나 쇼핑몰 상세페이지 말투는 쓰지 마.",
+    category === "toss"
+      ? "예시의 문체 특징을 적용해: '이런 거 숨겨두는 게 국룰인 거 알지? ㅋㅋ'처럼 일상 공감으로 시작하고, 상품을 발견한 순간의 반응을 자연스럽게 말한 다음, 확인된 특징을 감각적이고 구체적인 표현으로 풀어줘."
+      : "",
+    category === "toss"
+      ? "짧은 문장과 줄바꿈으로 리듬을 만들고, 중간중간 '진짜 요물임', '장난 아님', '나도 모르게 눈길 감', 'ㅠㅠ', 'ㅋㅋ' 같은 구어체 반응을 과하지 않게 섞어줘."
+      : "",
+    category === "toss" ? "마무리는 친구에게 이야기하듯 가벼운 농담이나 솔직한 한마디로 끝내." : "첫 단락은 관심을 끄는 핵심 요약, 두 번째 단락은 확인된 사실과 배경, 세 번째 단락은 현재 상황과 독자에게 중요한 점으로 마무리해.",
     "게시글은 반드시 정확히 3개의 단락으로만 작성해. 각 단락은 1~3개의 짧은 문장으로 구성하고, 단락 사이에는 빈 줄을 하나만 넣어. 소제목, 번호, 목록은 쓰지 마.",
-    "첫 번째 단락은 스크롤을 멈추게 하는 후킹 문장으로 시작하고, 두 번째 단락은 확인된 상품 특징이나 주제를 자연스럽게 설명하며, 세 번째 단락은 가벼운 농담이나 솔직한 한마디로 마무리해.",
-    "상품명, 기능, 용량, 소재, 구성, 가격, 할인, 배송, 재고 등은 링크 페이지에서 확인된 내용만 사용해. 확인되지 않은 구체 정보는 만들지 마.",
-    "사용자가 실제 사용 경험을 제공하지 않았다면 구매하거나 먹어 봤다고 거짓말하지 마. 가족이나 남편의 반응, 직접 사용한 에피소드도 지어내지 말고, '발견했는데', '이런 제품 찾는 분들 참고'처럼 소개형으로 자연스럽게 써.",
-    "수익 보장, 과장된 효능, 검증되지 않은 24시간 추적·수수료 주장은 넣지 마.",
-    "링크와 제휴 고지 문구는 시스템이 뒤에 자동으로 붙이므로 본문에는 URL이나 고지 문구를 쓰지 마.",
-    "광고라는 사실을 숨기려 하지 말고, 자연스러운 추천 문체로만 작성해.",
-    "게시글 본문만 출력해."
+    "첫 번째 단락은 스크롤을 멈추게 하는 후킹 문장으로 시작하고, 두 번째 단락은 확인된 사실이나 상품 특징을 자연스럽게 설명하며, 세 번째 단락은 핵심 의미를 정리해 마무리해.",
+    category === "toss" ? "상품명, 기능, 용량, 소재, 구성, 가격, 할인, 배송, 재고 등은 링크 페이지에서 확인된 내용만 사용해. 확인되지 않은 구체 정보는 만들지 마." : "",
+    category === "toss" ? "사용자가 실제 사용 경험을 제공하지 않았다면 구매하거나 먹어 봤다고 거짓말하지 마. 가족이나 남편의 반응, 직접 사용한 에피소드도 지어내지 마." : "",
+    category === "toss" ? "수익 보장, 과장된 효능, 검증되지 않은 24시간 추적·수수료 주장은 넣지 마." : "",
+    category === "toss" ? "링크와 제휴 고지 문구는 시스템이 뒤에 자동으로 붙이므로 본문에는 URL이나 고지 문구를 쓰지 마." : "",
+    category === "toss" ? "광고라는 사실을 숨기려 하지 말고, 자연스러운 추천 문체로만 작성해." : "",
+    "게시글 본문만 출력해. 조사 과정, 출처 목록, 안내 문구를 별도로 붙이지 마."
   ].filter(Boolean).join("\n");
 
   let generated = "";
@@ -371,13 +410,19 @@ app.post("/api/generate", async (req, res) => {
     const timeout = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
     try {
       const url = "https://generativelanguage.googleapis.com/v1beta/models/" + GEMINI_MODEL + ":generateContent";
+      const requestBody = {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: 620, temperature: category === "daily" ? 0.55 : 0.8 }
+      };
+      if (category === "daily") {
+        const googleSearch = {};
+        if (todayIssue) googleSearch.timeRangeFilter = seoulDayTimeRange();
+        requestBody.tools = [{ google_search: googleSearch }];
+      }
       const r = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: 420, temperature: 0.8 }
-        }),
+        body: JSON.stringify(requestBody),
         signal: controller.signal
       });
       const data = await r.json().catch(() => ({}));
@@ -390,10 +435,10 @@ app.post("/api/generate", async (req, res) => {
       }
       generated = data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("").trim() || "";
       if (!generated) throw new Error("AI가 글을 생성하지 못했습니다.");
-      mode = "AI (" + GEMINI_MODEL + ")";
+      mode = "AI (" + GEMINI_MODEL + (category === "daily" ? " · Google 검색 조사" : "") + ")";
     } catch (e) {
       const detail = e.name === "AbortError"
-        ? "Gemini 응답 시간 초과(25초). 다시 시도해 주세요."
+        ? "검색 및 글 생성 시간이 초과됐습니다. 다시 시도해 주세요."
         : e.message;
       console.error("Gemini generate failed:", detail);
       return res.status(502).json({ error: "AI 생성 실패: " + detail });
@@ -415,7 +460,7 @@ app.post("/api/generate", async (req, res) => {
     commentText: commentParts.join("\n\n"),
     mode,
     category,
-    productName: subject,
+    productName: subject || "오늘의 이슈",
     links: { affiliateLink }
   });
 });
