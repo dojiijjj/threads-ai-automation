@@ -35,11 +35,17 @@ button.danger{background:#492326;color:#ffd9dc}
 #productImage{display:block;max-width:100%;max-height:360px;object-fit:contain;border-radius:12px;background:#101012;border:1px solid #333}
 #downloadProductImage{margin-top:10px;width:100%;background:#303036;color:#fff}
 </style>
-<script src="/app.js?v=16" defer></script>
+<script src="/app.js?v=17" defer></script>
 </head>
 <body>
 <main>
   <div class="top"><div class="brand">◉ Threads 제휴 자동화</div><div class="status" id="status">화면 준비 중</div></div>
+
+  <div class="card">
+    <h2>실시간 인기 커뮤 썰</h2>
+    <div class="actions"><button id="searchCommunityStories" type="button">인기 썰 검색</button></div>
+    <div id="communityStoryList"></div>
+  </div>
 
   <div class="card">
     <h2>콘텐츠 종류</h2>
