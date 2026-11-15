@@ -1,87 +1,19 @@
-const express = require("express");
-const dns = require("dns").promises;
-const net = require("net");
-const path = require("path");
-const app = express();
+const express=require("express");
+const dns=require("dns").promises;
+const net=require("net");
+const path=require("path");
+const app=express();
 app.use(express.json({limit:"1mb"}));
 app.use(express.static(path.join(__dirname,"public")));
-const PORT=process.env.PORT||3000;
-const MODEL="gemini-3.8-flash";
+const PORT=process.env.PORT||3000,MODEL="gemini-3.8-flash";
 const clean=(v,n=3000)=>String(v||"").trim().slice(0,n);
-function urlOf(v){
-  const m=String(v||"").match(/https?:\\/\\/[^\\s<>"'`]+/i);
-  if(!m) throw new Error("상품 URL을 입력해 주세요.");
-  const u=new URL(m[0].replace(/[.,!?;:，。！？；：)\\]}》〉」』】]+$/u,""));
-  if(!["http:","https:"].includes(u.protocol)||u.username||u.password) throw new Error("올바른 상품 URL이 아닙니다.");
-  return u.toString();
-}
-function privateIp(a){
- if(net.isIPv4(a)){const p=a.split(".").map(Number);return p[0]===0||p[0]===10||p[0]===127||(p[0]===169&&p[1]===254)||(p[0]===172&&p[1]>=16&&p[1]<=31)||(p[0]===192&&p[1]===168)||p[0]>=224;}
- if(net.isIPv6(a)){const x=a.toLowerCase();return x==="::"||x==="::1"||x.startsWith("fc")||x.startsWith("fd")||x.startsWith("fe8")||x.startsWith("fe9")||x.startsWith("fea")||x.startsWith("feb");}
- return true;
-}
-async function checkHost(u){
- const h=new URL(u).hostname.toLowerCase();
- if(h==="localhost"||h.endsWith(".local")||h.endsWith(".localhost")) throw new Error("내부 주소는 사용할 수 없습니다.");
- if(net.isIP(h)){if(privateIp(h))throw new Error("내부 네트워크 주소는 사용할 수 없습니다.");return;}
- const rows=await dns.lookup(h,{all:true});
- if(!rows.length||rows.some(x=>privateIp(x.address)))throw new Error("안전하지 않은 주소입니다.");
-}
-async function fetchPage(raw,depth=0){
- const u=urlOf(raw);await checkHost(u);
- const c=new AbortController(),t=setTimeout(()=>c.abort(),10000);
- try{
-  const r=await fetch(u,{redirect:"manual",signal:c.signal,headers:{"User-Agent":"Mozilla/5.0","Accept":"text/html"}});
-  if([301,302,303,307,308].includes(r.status)){if(depth>=3)throw new Error("링크 이동이 너무 많습니다.");const loc=r.headers.get("location");if(!loc)throw new Error("이동 주소를 확인할 수 없습니다.");return fetchPage(new URL(loc,u).toString(),depth+1);}
-  if(!r.ok)throw new Error("상품 페이지를 열지 못했습니다. HTTP "+r.status);
-  const type=r.headers.get("content-type")||"";if(!/text\\/html|application\\/xhtml\\+xml/i.test(type))throw new Error("상품 정보를 읽을 수 없는 페이지입니다.");
-  const reader=r.body.getReader();let bytes=0,parts=[];
-  while(true){const {done,value}=await reader.read();if(done)break;bytes+=value.length;if(bytes>1200000){await reader.cancel();break;}parts.push(Buffer.from(value));}
-  return Buffer.concat(parts).toString("utf8");
- }catch(e){if(e.name==="AbortError")throw new Error("상품 페이지 응답 시간이 초과됐습니다.");throw e;}finally{clearTimeout(t);}
-}
-function decode(s){return String(s||"").replace(/&amp;/gi,"&").replace(/&quot;/gi,'"').replace(/&#39;|&apos;/gi,"'").replace(/&lt;/gi,"<").replace(/&gt;/gi,">").replace(/&#(\\d+);/g,(_,n)=>String.fromCharCode(+n)).replace(/\\s+/g," ").trim();}
-function meta(html,key){
- for(const tag of html.match(/<meta\\b[^>]*>/gi)||[]){
-  const a={};tag.replace(/([\\w:-]+)\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))/g,(_,k,z,d,s,b)=>(a[k.toLowerCase()]=d??s??b,z));
-  if((a.property||"").toLowerCase()===key||(a.name||"").toLowerCase()===key)return decode(a.content);
- }return "";
-}
-app.get("/api/preview",async(req,res)=>{
- try{const u=urlOf(req.query.url),h=await fetchPage(u),tm=h.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i);
- const title=meta(h,"og:title")||meta(h,"twitter:title")||decode(tm?tm[1].replace(/<[^>]+>/g," "):"");
- const description=meta(h,"og:description")||meta(h,"description")||meta(h,"twitter:description");
- const imageRaw=meta(h,"og:image")||meta(h,"og:image:secure_url")||meta(h,"twitter:image");let image="";
- try{const x=new URL(imageRaw,u);if(["http:","https:"].includes(x.protocol))image=x.toString();}catch(_){}
- res.json({title:title.slice(0,300),description:description.slice(0,1500),image,url:u});
- }catch(e){res.status(422).json({error:e.message});}
-});
-app.post("/api/generate",async(req,res)=>{
- if(!process.env.GEMINI_API_KEY)return res.status(503).json({error:"Railway 환경변수 GEMINI_API_KEY가 필요합니다."});
- const title=clean(req.body.title,300),description=clean(req.body.description,2000),url=clean(req.body.url,2000),extra=clean(req.body.extra,2000);
- if(!title)return res.status(400).json({error:"상품 정보를 먼저 불러오거나 상품명을 입력해 주세요."});
- const prompt=`너는 한국어 티스토리 상품 소개 전문 블로거야. 아래 확인된 정보만 근거로 자연스럽고 읽기 쉬운 상품 소개 글을 작성해.
-중요: 실제 사용 경험을 제공받지 않았으므로 직접 써봤다, 구매했다, 만족했다 같은 허위 체험담을 절대 쓰지 마. 실제 후기처럼 친근하고 생생한 문체이되 '상품을 살펴보니', '이런 점이 눈에 띈다'처럼 소개형으로 작성해.
-상품명: ${title}
-페이지 설명/확인 정보: ${description}
-추가 메모: ${extra}
-상품 URL: ${url}
-구성:
-1. 검색에 적합한 자연스러운 제목 1개
-2. 도입부: 어떤 사람에게 유용할지
-3. 주요 특징과 장점 (확인된 내용만)
-4. 구매 전 확인할 점 (사이즈, 호환성, 옵션, 가격 변동 등 상품에 맞게)
-5. 자연스러운 마무리
-본문은 700~1100자 정도, 소제목 2~4개, 문단 구분을 충분히 해. 과장 광고, 검증되지 않은 효능, 가짜 가격/할인/평점은 금지. 링크와 제휴 고지는 본문에 임의로 만들지 마. 출력은 반드시 JSON 객체 {"title":"...","body":"..."} 하나만.`;
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),65000);
- try{
-  const r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+MODEL+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.7,maxOutputTokens:1800,responseMimeType:"application/json"}}),signal:controller.signal});
-  const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error?.message||"Gemini 요청 실패: "+r.status);
-  const raw=d.candidates?.[0]?.content?.parts?.map(x=>x.text||"").join("").trim()||"";
-  const parsed=JSON.parse(raw.replace(/^```json\\s*|\\s*```$/g,""));
-  if(!parsed.title||!parsed.body)throw new Error("AI 결과 형식이 올바르지 않습니다.");
-  res.json({title:String(parsed.title),body:String(parsed.body),model:MODEL});
- }catch(e){res.status(502).json({error:e.name==="AbortError"?"글 생성 시간이 초과됐습니다.":e.message});}finally{clearTimeout(timer);}
-});
+function urlOf(v){const m=String(v||"").match(/https?:\/\/[^\s<>"']+/i);if(!m)throw new Error("상품 URL을 입력해 주세요.");const u=new URL(m[0].replace(/[.,!?;:，。！？；：)\]}》〉」』】]+$/u,""));if(!["http:","https:"].includes(u.protocol)||u.username||u.password)throw new Error("올바른 상품 URL이 아닙니다.");return u.toString();}
+function privateIp(a){if(net.isIPv4(a)){const p=a.split(".").map(Number);return p[0]===0||p[0]===10||p[0]===127||(p[0]===169&&p[1]===254)||(p[0]===172&&p[1]>=16&&p[1]<=31)||(p[0]===192&&p[1]===168)||p[0]>=224;}if(net.isIPv6(a)){const x=a.toLowerCase();return x==="::"||x==="::1"||x.startsWith("fc")||x.startsWith("fd")||x.startsWith("fe8")||x.startsWith("fe9")||x.startsWith("fea")||x.startsWith("feb");}return true;}
+async function checkHost(u){const h=new URL(u).hostname.toLowerCase();if(h==="localhost"||h.endsWith(".local")||h.endsWith(".localhost"))throw new Error("내부 주소는 사용할 수 없습니다.");if(net.isIP(h)){if(privateIp(h))throw new Error("내부 네트워크 주소는 사용할 수 없습니다.");return;}const rows=await dns.lookup(h,{all:true});if(!rows.length||rows.some(x=>privateIp(x.address)))throw new Error("안전하지 않은 주소입니다.");}
+async function fetchPage(raw,depth=0){const u=urlOf(raw);await checkHost(u);const c=new AbortController(),t=setTimeout(()=>c.abort(),10000);try{const r=await fetch(u,{redirect:"manual",signal:c.signal,headers:{"User-Agent":"Mozilla/5.0","Accept":"text/html"}});if([301,302,303,307,308].includes(r.status)){if(depth>=3)throw new Error("링크 이동이 너무 많습니다.");const loc=r.headers.get("location");if(!loc)throw new Error("이동 주소를 확인할 수 없습니다.");return fetchPage(new URL(loc,u).toString(),depth+1);}if(!r.ok)throw new Error("상품 페이지를 열지 못했습니다. HTTP "+r.status);const type=r.headers.get("content-type")||"";if(!/text\/html|application\/xhtml\+xml/i.test(type))throw new Error("상품 정보를 읽을 수 없는 페이지입니다.");const reader=r.body.getReader();let bytes=0,parts=[];while(true){const {done,value}=await reader.read();if(done)break;bytes+=value.length;if(bytes>1200000){await reader.cancel();break;}parts.push(Buffer.from(value));}return Buffer.concat(parts).toString("utf8");}catch(e){if(e.name==="AbortError")throw new Error("상품 페이지 응답 시간이 초과됐습니다.");throw e;}finally{clearTimeout(t);}}
+function decode(s){return String(s||"").replace(/&amp;/gi,"&").replace(/&quot;/gi,'"').replace(/&#39;|&apos;/gi,"'").replace(/&lt;/gi,"<").replace(/&gt;/gi,">").replace(/&#(\d+);/g,(_,n)=>String.fromCharCode(+n)).replace(/\s+/g," ").trim();}
+function meta(html,key){for(const tag of html.match(/<meta\b[^>]*>/gi)||[]){const a={};tag.replace(/([\w:-]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/g,(_,k,z,d,s,b)=>(a[k.toLowerCase()]=d??s??b,z));if((a.property||"").toLowerCase()===key||(a.name||"").toLowerCase()===key)return decode(a.content);}return "";}
+app.get("/api/preview",async(req,res)=>{try{const u=urlOf(req.query.url),h=await fetchPage(u),tm=h.match(/<title[^>]*>([\s\S]*?)<\/title>/i);const title=meta(h,"og:title")||meta(h,"twitter:title")||decode(tm?tm[1].replace(/<[^>]+>/g," "):"");const description=meta(h,"og:description")||meta(h,"description")||meta(h,"twitter:description");const imageRaw=meta(h,"og:image")||meta(h,"og:image:secure_url")||meta(h,"twitter:image");let image="";try{const x=new URL(imageRaw,u);if(["http:","https:"].includes(x.protocol))image=x.toString();}catch(_){}res.json({title:title.slice(0,300),description:description.slice(0,1500),image,url:u});}catch(e){res.status(422).json({error:e.message});}});
+app.post("/api/generate",async(req,res)=>{if(!process.env.GEMINI_API_KEY)return res.status(503).json({error:"Railway 환경변수 GEMINI_API_KEY가 필요합니다."});const title=clean(req.body.title,300),description=clean(req.body.description,2000),url=clean(req.body.url,2000),extra=clean(req.body.extra,2000);if(!title)return res.status(400).json({error:"상품 정보를 먼저 가져오거나 상품명을 입력해 주세요."});const prompt=["너는 한국어 티스토리 상품 소개 전문 블로거야. 아래 확인된 정보만 근거로 자연스럽고 읽기 쉬운 상품 소개 글을 작성해.","실제 사용 경험을 제공받지 않았으므로 직접 써봤다, 구매했다, 만족했다 같은 허위 체험담을 절대 쓰지 마. 친근하고 생생한 소개형 문체로 작성해.","상품명: "+title,"페이지 설명/확인 정보: "+description,"추가 메모: "+extra,"상품 URL: "+url,"구성: 검색에 적합한 제목 1개, 도입부, 주요 특징과 장점(확인된 내용만), 구매 전 확인할 점, 자연스러운 마무리.","본문은 700~1100자, 소제목 2~4개. 과장 광고, 검증되지 않은 효능, 가짜 가격/할인/평점은 금지. 링크와 제휴 고지는 임의로 만들지 마.","출력은 JSON 객체 하나: title과 body 필드."].join("\n");const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),65000);try{const r=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+MODEL+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.7,maxOutputTokens:1800,responseMimeType:"application/json"}}),signal:controller.signal});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error?.message||"Gemini 요청 실패: "+r.status);const raw=d.candidates?.[0]?.content?.parts?.map(x=>x.text||"").join("").trim()||"";const parsed=JSON.parse(raw);if(!parsed.title||!parsed.body)throw new Error("AI 결과 형식이 올바르지 않습니다.");res.json({title:String(parsed.title),body:String(parsed.body),model:MODEL});}catch(e){res.status(502).json({error:e.name==="AbortError"?"글 생성 시간이 초과됐습니다.":e.message});}finally{clearTimeout(timer);}});
 app.get("/api/status",(req,res)=>res.json({ok:true,aiConfigured:Boolean(process.env.GEMINI_API_KEY),mode:"Tistory 초안 작성"}));
 app.listen(PORT,()=>console.log("Tistory assistant listening on "+PORT));
