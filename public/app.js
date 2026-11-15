@@ -72,7 +72,6 @@
     $('linkPreview').classList.toggle('hidden', !isAffiliate);
     $('todayIssue').classList.toggle('hidden', isAffiliate);
     $('todayDaily').classList.toggle('hidden', isAffiliate);
-    $('entertainmentNews').classList.toggle('hidden', isAffiliate);
     entertainmentNewsItem = null;
     $('newsImageWrap').classList.add('hidden');
     $('newsImage').removeAttribute('src');
