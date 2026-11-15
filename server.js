@@ -334,14 +334,88 @@ app.get("/api/link-preview", async (req, res) => {
   try {
     const url = validateHttpUrl(raw);
     const html = await fetchPublicHtml(url);
-    const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const titleMatch = html.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i);
     const title = htmlMeta(html, "og:title") || htmlMeta(html, "twitter:title") ||
       decodeHtml(titleMatch ? titleMatch[1].replace(/<[^>]+>/g, " ") : "");
     const description = htmlMeta(html, "og:description") || htmlMeta(html, "description") || htmlMeta(html, "twitter:description");
-    const image = htmlMeta(html, "og:image");
+    const imageRaw = htmlMeta(html, "og:image") || htmlMeta(html, "og:image:secure_url") || htmlMeta(html, "twitter:image");
+    let image = "";
+    if (imageRaw) {
+      try {
+        const parsedImage = new URL(imageRaw, url);
+        if (["http:", "https:"].includes(parsedImage.protocol) && !parsedImage.username && !parsedImage.password) {
+          image = parsedImage.toString();
+        }
+      } catch (_) {}
+    }
     res.json({ ok: true, title: title.slice(0, 240), description: description.slice(0, 700), image });
   } catch (e) {
     res.status(422).json({ error: e.message || "상품 정보를 읽지 못했습니다." });
+  }
+});
+
+async function fetchPublicImage(rawUrl, redirects = 0) {
+  const url = validateHttpUrl(rawUrl);
+  await assertPublicUrl(url);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), LINK_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      redirect: "manual",
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; ProductImagePreview/1.0)",
+        "Accept": "image/avif,image/webp,image/png,image/jpeg,image/gif"
+      }
+    });
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      if (redirects >= 3) throw new Error("이미지 이동 횟수가 너무 많습니다.");
+      const location = response.headers.get("location");
+      if (!location) throw new Error("이미지 주소를 확인할 수 없습니다.");
+      return await fetchPublicImage(new URL(location, url).toString(), redirects + 1);
+    }
+    if (!response.ok) throw new Error("상품 사진을 가져오지 못했습니다. (" + response.status + ")");
+    const type = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+    const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"];
+    if (!allowed.includes(type)) throw new Error("지원하지 않는 이미지 형식입니다.");
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of response.body) {
+      size += chunk.length;
+      if (size > 10 * 1024 * 1024) {
+        response.body.cancel().catch(() => {});
+        throw new Error("상품 사진이 10MB를 초과해 가져올 수 없습니다.");
+      }
+      chunks.push(chunk);
+    }
+    return { buffer: Buffer.concat(chunks), type };
+  } catch (e) {
+    if (e.name === "AbortError") throw new Error("상품 사진을 가져오는 시간이 초과됐습니다.");
+    throw e;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+app.get("/api/product-image", async (req, res) => {
+  const raw = cleanText(req.query.url, 3000);
+  if (!raw) return res.status(400).json({ error: "이미지 주소가 없습니다." });
+  try {
+    const result = await fetchPublicImage(raw);
+    const extension = ({
+      "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
+      "image/gif": "gif", "image/avif": "avif"
+    })[result.type] || "jpg";
+    const download = req.query.download === "1";
+    res.setHeader("Content-Type", result.type);
+    res.setHeader("Content-Length", result.buffer.length);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Disposition", (download ? "attachment" : "inline") + '; filename="product-image.' + extension + '"');
+    res.setHeader("Cache-Control", "private, max-age=300");
+    res.send(result.buffer);
+  } catch (e) {
+    res.status(422).json({ error: e.message || "상품 사진을 가져오지 못했습니다." });
   }
 });
 
