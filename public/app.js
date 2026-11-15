@@ -4,6 +4,7 @@
   let data = { posts: [], scheduled: [] };
   let view = 'posts';
   let linkInfo = null;
+  let productImageDownloadUrl = '';
   let currentCategory = 'toss';
 
   function message(value) { $('message').textContent = value; }
@@ -75,6 +76,9 @@
     $('generate').textContent = isAffiliate ? 'AI 글 생성' : '키워드 조사 후 글 생성';
     $('affiliateLabel').textContent = '토스 쉐어링크';
     linkInfo = null;
+    productImageDownloadUrl = '';
+    $('productImageWrap').classList.add('hidden');
+    $('productImage').removeAttribute('src');
     $('linkInfo').textContent = '';
   }
 
@@ -169,12 +173,22 @@
     const button = $('linkPreview');
     button.disabled = true;
     $('linkInfo').textContent = '상품 페이지 정보를 읽는 중...';
+    $('productImageWrap').classList.add('hidden');
+    productImageDownloadUrl = '';
+    $('productImage').removeAttribute('src');
     try {
       linkInfo = await api('/api/link-preview?url=' + encodeURIComponent(url));
       if (linkInfo.title && !$('topic').value.trim()) $('topic').value = linkInfo.title;
+      if (linkInfo.image) {
+        productImageDownloadUrl = '/api/product-image?url=' + encodeURIComponent(linkInfo.image);
+        $('productImage').src = productImageDownloadUrl;
+        $('productImageWrap').classList.remove('hidden');
+      }
       const details = [linkInfo.title, linkInfo.description].filter(Boolean).join(' / ');
       $('linkInfo').textContent = details ? '읽어온 정보: ' + details : '페이지 제목을 찾지 못했습니다. 상품명을 직접 입력해 주세요.';
-      message('링크 정보 확인 완료. 상품명과 설명을 확인해 주세요.');
+      message(linkInfo.image
+        ? '상품 정보와 대표 사진을 가져왔어요. 사진 다운로드 버튼으로 저장할 수 있어요.'
+        : '상품 정보는 확인했지만 페이지에서 대표 사진을 찾지 못했어요.');
     } catch (err) {
       linkInfo = null;
       $('linkInfo').textContent = '자동으로 읽지 못했습니다. 상품명을 직접 입력해 주세요. 링크는 게시글에 그대로 넣을 수 있어요.';
@@ -182,6 +196,16 @@
     } finally {
       button.disabled = false;
     }
+  });
+
+  $('downloadProductImage').addEventListener('click', () => {
+    if (productImageDownloadUrl) window.location.href = productImageDownloadUrl + '&download=1';
+  });
+
+  $('productImage').addEventListener('error', () => {
+    $('productImageWrap').classList.add('hidden');
+    productImageDownloadUrl = '';
+    $('linkInfo').textContent += ' 상품 사진을 불러오지 못했습니다.';
   });
 
   async function generatePost(todayIssue, todayDaily) {
