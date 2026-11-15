@@ -32,9 +32,9 @@ button.danger{background:#492326;color:#ffd9dc}
 .hidden{display:none!important}
 #linkInfo{color:#b8d5ff;font-size:12px;line-height:1.5;margin-top:8px;overflow-wrap:anywhere}
 #productImageWrap{margin-top:12px}
-#productImage,#newsImage{display:block;max-width:100%;max-height:360px;object-fit:contain;border-radius:12px;background:#101012;border:1px solid #333}
+#productImage{display:block;max-width:100%;max-height:360px;object-fit:contain;border-radius:12px;background:#101012;border:1px solid #333}
 </style>
-<script src="/app.js?v=21" defer></script>
+<script src="/app.js?v=22" defer></script>
 </head>
 <body>
 <main>
@@ -58,10 +58,6 @@ button.danger{background:#492326;color:#ffd9dc}
         
       </div>
     </div>
-    <div id="newsImageWrap" class="hidden" style="margin-top:12px">
-      <img id="newsImage" alt="연예계 뉴스 기사 대표 사진">
-      <p class="muted" id="newsInfo"></p>
-    </div>
 
     <label id="topicLabel" for="topic">상품명</label>
     <input id="topic">
@@ -75,9 +71,9 @@ button.danger{background:#492326;color:#ffd9dc}
 
     <div class="actions">
       <button id="generate" type="button">AI 글 생성</button>
-      <button id="todayIssue" class="secondary hidden" type="button">오늘의 이슈</button>
       <button id="todayDaily" class="secondary hidden" type="button">오늘의 일상</button>
-      <button id="entertainmentNews" class="secondary" type="button">연예계 뉴스</button>
+      <button id="emotionalQuote" class="secondary hidden" type="button">감성글귀</button>
+      <button id="wiseSaying" class="secondary hidden" type="button">명언</button>
     </div>
     <label for="post">게시글 본문</label>
     <textarea id="post"></textarea>
