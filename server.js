@@ -368,7 +368,7 @@ app.post("/api/publish", async (req, res) => {
     const createdAt = new Date().toISOString();
     const post = {
       id: result.id, text, username: result.username, category,
-      status: "게시 완료", commentStatus, replyId, createdAt
+      status: "게시 완료", commentStatus, commentText, replyId, createdAt
     };
     store.posts.unshift(post);
     save();
@@ -393,6 +393,27 @@ app.post("/api/schedule", (req, res) => {
   store.scheduled.sort((a, b) => new Date(a.at) - new Date(b.at));
   save();
   res.json({ ok: true, item });
+});
+
+app.post("/api/reply", async (req, res) => {
+  const postId = cleanText(req.body.postId, 200);
+  const post = store.posts.find(item => item.id === postId);
+  if (!post) return res.status(404).json({ error: "해당 게시물을 찾지 못했습니다." });
+  const text = cleanText(req.body.text || post.commentText, 2000);
+  if (!text) return res.status(400).json({ error: "등록할 댓글 내용이 없습니다." });
+  try {
+    const replyId = await publishReply(text, post.id);
+    post.commentText = text;
+    post.replyId = replyId;
+    post.commentStatus = "댓글 게시 완료";
+    save();
+    res.json({ ok: true, replyId, post });
+  } catch (e) {
+    post.commentStatus = "댓글 등록 실패";
+    post.commentError = e.message;
+    save();
+    res.status(400).json({ error: e.message });
+  }
 });
 
 app.delete("/api/schedule/:id", (req, res) => {
@@ -431,7 +452,7 @@ async function runScheduler() {
         id: result.id, text: item.text, username: result.username,
         category: item.category || "daily",
         status: commentError ? "예약 게시 완료 (댓글 실패)" : "예약 게시 완료",
-        commentStatus: item.commentStatus, replyId, createdAt: completedAt
+        commentStatus: item.commentStatus, commentText: item.commentText || "", replyId, createdAt: completedAt
       });
     } catch (e) {
       item.status = "실패: " + e.message;
