@@ -266,105 +266,6 @@ async function fetchGoogleNewsFeed(query) {
   }
 }
 
-async function fetchBingNewsFeed(query) {
-  const url = "https://www.bing.com/news/search?q=" + encodeURIComponent(query) +
-    "&format=rss&setlang=ko-KR&mkt=ko-KR";
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12000);
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; ThreadsInfoWriter/1.0)",
-        "Accept": "application/rss+xml, application/xml, text/xml"
-      }
-    });
-    if (!response.ok) throw new Error("Bing 뉴스 RSS 요청 실패 (" + response.status + ")");
-    const xml = await response.text();
-    const blocks = Array.from(xml.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi), match => match[1]);
-    return blocks.map(block => {
-      const rawLink = rssValue(block, "link");
-      let link = rawLink;
-      try {
-        const parsed = new URL(rawLink);
-        const target = parsed.searchParams.get("url") || parsed.searchParams.get("u");
-        if (target && /^https?:\/\//i.test(target)) link = target;
-      } catch (_) {}
-      return {
-        title: rssValue(block, "title"),
-        description: rssValue(block, "description").slice(0, 700),
-        source: rssValue(block, "source"),
-        link,
-        publishedAt: rssValue(block, "pubDate")
-      };
-    }).filter(item => item.title && item.link);
-  } catch (e) {
-    if (e.name === "AbortError") throw new Error("Bing 뉴스 검색 시간이 초과됐습니다.");
-    throw e;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function gatherEntertainmentNews() {
-  const googleQueries = ["연예 뉴스", "한국 연예계 배우 가수 아이돌", "K-pop 연예"];
-  const bingQueries = ["한국 연예 뉴스", "연예계 배우 가수 아이돌", "K-pop 한국"];
-  const requests = [
-    ...googleQueries.map(query => fetchGoogleNewsFeed(query)),
-    ...bingQueries.map(query => fetchBingNewsFeed(query))
-  ];
-  const results = await Promise.allSettled(requests);
-  const items = [];
-  const seen = new Set();
-  for (const result of results) {
-    if (result.status !== "fulfilled") continue;
-    for (const item of result.value) {
-      const key = String(item.title || "").replace(/\s+/g, "").toLowerCase();
-      if (!key || seen.has(key) || !item.link) continue;
-      seen.add(key);
-      items.push(item);
-    }
-  }
-
-  const now = Date.now();
-  const recent = items.filter(item => {
-    const published = Date.parse(item.publishedAt || "");
-    return !Number.isFinite(published) || (published <= now + 60 * 60 * 1000 && published >= now - 5 * 24 * 60 * 60 * 1000);
-  });
-  const ordered = (recent.length ? recent : items).sort((a, b) =>
-    (Date.parse(b.publishedAt || "") || 0) - (Date.parse(a.publishedAt || "") || 0)
-  );
-
-  for (const item of ordered.slice(0, 18)) {
-    try {
-      const html = await fetchPublicHtml(item.link);
-      const rawImage = htmlMeta(html, "og:image") ||
-        htmlMeta(html, "og:image:secure_url") ||
-        htmlMeta(html, "twitter:image");
-      if (!rawImage) continue;
-      const imageUrl = new URL(rawImage, item.link);
-      if (!["http:", "https:"].includes(imageUrl.protocol) || imageUrl.username || imageUrl.password) continue;
-      const imageData = await fetchPublicImage(imageUrl.toString());
-      if (!["image/jpeg", "image/png"].includes(imageData.type)) continue;
-      const title = htmlMeta(html, "og:title") || htmlMeta(html, "twitter:title") || item.title;
-      const description = htmlMeta(html, "og:description") || htmlMeta(html, "description") || item.description;
-      return {
-        title: title.replace(/\s+/g, " ").trim().slice(0, 300),
-        description: String(description || "").slice(0, 700),
-        source: item.source || "",
-        link: item.link,
-        publishedAt: item.publishedAt || "",
-        image: imageUrl.toString()
-      };
-    } catch (_) {}
-  }
-
-  if (!items.length) {
-    throw new Error("Google·Bing 뉴스 검색 결과를 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.");
-  }
-  throw new Error("최신 연예 기사는 찾았지만 게시물에 첨부할 JPG·PNG 대표 사진을 확인하지 못했습니다.");
-}
-
 async function gatherNewsResearch(topic, todayIssue) {
   const queries = todayIssue
     ? [null, "대한민국 주요 뉴스 when:1d", "사건 사고 when:1d", "사회 이슈 when:1d"]
@@ -426,15 +327,6 @@ function htmlMeta(html, key) {
   }
   return "";
 }
-
-app.get("/api/entertainment-news", async (req, res) => {
-  try {
-    const item = await gatherEntertainmentNews();
-    res.json({ ok: true, item });
-  } catch (e) {
-    res.status(502).json({ error: "연예계 뉴스 검색 실패: " + (e.message || "잠시 후 다시 시도해 주세요.") });
-  }
-});
 
 app.get("/api/link-preview", async (req, res) => {
   const raw = cleanText(req.query.url, 2000);
@@ -674,9 +566,6 @@ app.post("/api/generate", async (req, res) => {
     return res.status(400).json({ error: e.message });
   }
 
-  const newsItemInput = req.body.newsItem && typeof req.body.newsItem === "object" ? req.body.newsItem : {};
-  const entertainmentTitle = cleanText(newsItemInput.title, 300);
-  const entertainmentNews = category === "daily" && req.body.entertainmentNews === true && Boolean(entertainmentTitle);
   const subject = productName || topic;
   if (!subject && !todayIssue && !todayDaily && !shortTextType) return res.status(400).json({ error: "주제를 입력해 주세요." });
   if (category !== "daily" && !affiliateLink) {
@@ -691,15 +580,7 @@ app.post("/api/generate", async (req, res) => {
   const pageDescription = cleanText(linkInfo.description, 700);
 
   const today = seoulTodayLabel();
-  let newsResearch = [];
-  if (false) {
-    try {
-      newsResearch = await gatherNewsResearch(subject, todayIssue);
-    } catch (e) {
-      return res.status(502).json({ error: "뉴스 조사 실패: " + e.message });
-    }
-  }
-  const researchText = newsResearch.length ? formatNewsResearch(newsResearch) : "";
+  const researchText = "";
 
   const prompt = [
     shortTextType === "emotional" ? "한국어 감성글귀를 작성해." : shortTextType === "proverb" ? "한국어 짧은 명언 형식의 문장을 새롭게 창작해." : category === "daily"
@@ -707,21 +588,17 @@ app.post("/api/generate", async (req, res) => {
       : "한국어 Threads(스레드)에 올릴 상품 소개 글을 작성해.",
     category === "daily" ? "오늘 날짜(대한민국 서울 기준): " + today : "",
     researchText ? "실시간 뉴스 조사 자료:\n" + researchText : "",
-    entertainmentNews ? "연예계 뉴스 게시글이다. 게시글의 첫 문장(첫 줄)은 아래 기사 제목을 한 글자도 바꾸지 말고 그대로 사용해: " + entertainmentTitle + ". 제목 다음부터는 친구에게 이 소식을 전하듯 자연스럽게 설명해." : "",
-    entertainmentNews ? "연예인 관련 루머, 사생활, 범죄 의혹, 건강 상태 등 민감하거나 확인되지 않은 내용은 사실처럼 쓰지 마. 조사 자료에 있는 확인된 사실만 사용하고, 추측·과장·악성 표현은 금지해. 기사 요약을 그대로 베끼지 말고 핵심을 새 문장으로 설명해." : "",
     category === "daily" && todayIssue
       ? "주제 선택: 아래 Google 뉴스의 주요 기사 목록에서 오늘 대한민국에서 널리 보도되는 뉴스·사건·사회 이슈를 골라라. 여러 언론사가 함께 다룬 사안을 우선하되 객관적으로 확인할 수 없는 인기 순위는 단정하지 마라."
       : "",
-    category === "daily" && !todayIssue && !todayDaily
-      ? "조사할 키워드: " + subject + ". 아래 Google 뉴스 검색 결과를 바탕으로 이 키워드가 가리키는 사건·이슈가 무엇인지 정리해라. 보도 날짜와 여러 언론사의 공통 사실을 확인하고 검색 결과에 없는 세부 내용은 추측하지 마라."
-      : "",
-    category === "daily" && !todayDaily
+    category === "daily" && !todayDaily && !shortTextType ? "사용자가 입력한 주제: " + subject + ". 최신 뉴스나 실시간 조사를 했다고 주장하지 말고, 일반적으로 알려진 내용을 이해하기 쉽게 풀어 써." : "",
+    category === "daily" && !todayDaily && !shortTextType
       ? "아래 기사 목록의 제목·언론사·보도 시각·요약을 조사 자료로 사용해라. 오래된 사건을 오늘 발생한 것처럼 쓰지 마라. 여러 언론사의 보도에서 공통으로 확인되는 사실만 단정하고 확인되지 않은 숫자·인명·장소·원인·피해 규모는 만들지 마라. 요약에 없는 원인이나 경과는 추측하지 말고 확인 가능한 범위에서 설명해라. 기사 제목을 베끼지 마라."
       : "",
-    category === "daily" && !todayDaily
+    category === "daily" && !todayDaily && !shortTextType
       ? "문체는 뉴스 기사나 방송 앵커의 보도처럼 쓰지 마. '전해졌습니다', '밝혔습니다', '보도됐습니다' 같은 딱딱한 기사체와 사실을 시간순으로 나열하는 방식은 피하고, 친구에게 이 이슈의 내용을 쉽게 알려주듯 자연스럽게 풀어 설명해. 무슨 일이거나 어떤 내용인지, 왜 관심을 받고 있는지, 우리에게 어떤 의미가 있는지를 쉬운 말로 전달해. 확인된 사실과 추측은 분명히 구분해."
       : "",
-    category === "daily" && !todayDaily
+    category === "daily" && !todayDaily && !shortTextType
       ? "댓글 참여 유도: 정확히 2단락으로 쓰고, 두 번째 단락의 마지막 문장은 해당 이슈와 직접 관련된 자연스러운 질문으로 끝내. 독자가 자기 생각이나 경험을 댓글로 나눌 수 있는 열린 질문을 해. '여러분 생각은 어떠세요?'만 기계적으로 덧붙이지 말고, 글 내용을 읽어야 답할 수 있는 구체적인 질문을 만들어. 질문을 위해 사실을 왜곡하거나 특정 의견을 강요하지 마."
       : "",
     category === "toss" ? "상품명 또는 주제: " + subject : "",
@@ -803,8 +680,18 @@ app.post("/api/generate", async (req, res) => {
   }
 
   if (shortTextType) {
-    generated = String(generated || "").replace(/\\r/g, "").split("\\n").map(line => line.trim()).filter(Boolean).slice(0, 2).join("\\n");
-    if (generated.split("\\n").length < 2) generated = generated.replace(/([.!?。！？])\\s+/, "$1\\n");
+    const lines = String(generated || "").replace(/\r/g, "").split(/\n+/).map(line => line.trim()).filter(Boolean);
+    if (lines.length < 2) {
+      const sentences = String(generated || "").match(/[^.!?。！？]+[.!?。！？]+|[^.!?。！？]+$/g) || [];
+      if (sentences.length >= 2) {
+        lines.splice(0, lines.length, sentences[0].trim(), sentences.slice(1).join("").trim());
+      } else {
+        const words = String(generated || "").trim().split(/\s+/).filter(Boolean);
+        const midpoint = Math.max(1, Math.ceil(words.length / 2));
+        lines.splice(0, lines.length, words.slice(0, midpoint).join(" "), words.slice(midpoint).join(" "));
+      }
+    }
+    generated = lines.slice(0, 2).join("\n");
   } else {
     generated = exactlyTwoParagraphs(generated);
   }
