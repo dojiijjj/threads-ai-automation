@@ -1,26 +1,27 @@
 <!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#101010"><title>Threads 자동화</title>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101010">
+<title>Threads 자동화</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#0d0d0f;color:#f5f5f5;font-family:system-ui,-apple-system,sans-serif}main{max-width:720px;margin:auto;padding:22px 16px 60px}.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}.brand{font-size:22px;font-weight:800}.status{font-size:12px;color:#aaa;border:1px solid #333;border-radius:30px;padding:7px 10px}.card{background:#18181b;border:1px solid #29292e;border-radius:18px;padding:17px;margin:14px 0}h2{font-size:17px;margin:0 0 14px}label{display:block;color:#aaa;font-size:13px;margin:12px 0 7px}input,textarea,select{width:100%;border:1px solid #39393f;background:#101012;color:white;border-radius:11px;padding:12px;font:inherit}textarea{min-height:145px;resize:vertical;line-height:1.5}button{border:0;border-radius:11px;padding:12px 15px;background:#fff;color:#111;font-weight:750;font-size:14px;cursor:pointer}button.secondary{background:#303036;color:#fff}button.danger{background:#492326;color:#ffd9dc}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.actions button{flex:1}.muted{color:#999;font-size:12px}.item{border-top:1px solid #303036;padding:13px 0}.item p{white-space:pre-wrap;line-height:1.5;margin:7px 0}.pill{font-size:11px;color:#bbb}.tabs{display:flex;gap:8px;margin-bottom:15px}.tabs button{flex:1}.notice{font-size:13px;color:#f0c778;line-height:1.5}.hidden{display:none}
-</style></head><body><main>
-<div class="top"><div class="brand">◉ Threads 자동화</div><div class="status" id="status">연결 확인 중</div></div>
-<div class="card"><h2>AI 게시글 작성</h2><label>게시글 주제</label><input id="topic" placeholder="예: 요즘 관심 있는 기술, 일상 이야기"><label>말투</label><select id="tone"><option>친근한</option><option>정보 전달형</option><option>재미있는</option><option>전문적인</option><option>공감형</option></select><div class="actions"><button id="generate">AI 글 생성</button></div><label>게시글 내용</label><textarea id="post" placeholder="생성된 글이 여기에 표시됩니다. 직접 수정할 수도 있어요."></textarea><div class="actions"><button id="publish">지금 게시하기</button><button class="secondary" id="showSchedule">예약 게시</button></div>
-<div id="scheduleBox" class="hidden"><label>게시 예약 시간</label><input id="when" type="datetime-local"><div class="actions"><button id="schedule">예약 등록</button></div></div><p class="muted" id="message"></p></div>
-<div class="card"><div class="tabs"><button class="secondary" id="historyTab">게시 기록</button><button class="secondary" id="scheduledTab">예약 목록</button></div><div id="list"></div></div>
-<p class="notice">※ 자동 게시에는 Railway의 THREADS_ACCESS_TOKEN이 필요합니다. AI 글 생성에는 GEMINI_API_KEY가 필요하며, 없으면 간단 초안이 생성됩니다.</p>
-</main>
-<script>
-const $=id=>document.getElementById(id);let data={posts:[],scheduled:[]},view="posts";
-async function api(url,opts={}){const r=await fetch(url,{headers:{"Content-Type":"application/json"},...opts});const d=await r.json();if(!r.ok)throw Error(d.error||"요청 실패");return d}
-function msg(t){$("message").textContent=t}
-async function refresh(){try{const s=await api("/api/status");$("status").textContent=s.username?"@"+s.username+" 연결됨":s.error?"토큰 확인 필요":s.configured?"토큰 등록됨":"토큰 미등록";data=await api("/api/posts");render()}catch(e){$("status").textContent="서버 연결 오류";msg(e.message)}}
-function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
-function render(){const arr=view==="posts"?data.posts:data.scheduled;let html="";arr.forEach(x=>{const when=view==="posts"?new Date(x.createdAt).toLocaleString():new Date(x.at).toLocaleString();html+='<div class="item"><span class="pill">'+esc(x.status||"")+" · "+esc(when)+'</span><p>'+esc(x.text)+'</p>'+(view==="scheduled"&&x.status==="예약 대기"?'<button class="danger" onclick="cancelSchedule(\\''+esc(x.id)+'\\')">예약 취소</button>':"")+'</div>'});$("list").innerHTML=html||'<p class="muted">표시할 내역이 없습니다.</p>'}
-$("generate").onclick=async()=>{try{$("generate").disabled=true;msg("글 생성 중...");const d=await api("/api/generate",{method:"POST",body:JSON.stringify({topic:$("topic").value,tone:$("tone").value})});$("post").value=d.text;msg(d.mode+"으로 생성했습니다. 내용을 확인하고 수정할 수 있어요.")}catch(e){msg(e.message)}finally{$("generate").disabled=false}};
-$("publish").onclick=async()=>{try{$("publish").disabled=true;msg("Threads에 게시 중...");await api("/api/publish",{method:"POST",body:JSON.stringify({text:$("post").value})});msg("게시 완료!");$("post").value="";view="posts";await refresh()}catch(e){msg(e.message)}finally{$("publish").disabled=false}};
-$("showSchedule").onclick=()=>$("scheduleBox").classList.toggle("hidden");
-$("schedule").onclick=async()=>{try{await api("/api/schedule",{method:"POST",body:JSON.stringify({text:$("post").value,at:$("when").value})});msg("예약 등록 완료");$("scheduleBox").classList.add("hidden");view="scheduled";await refresh()}catch(e){msg(e.message)}};
-$("historyTab").onclick=()=>{view="posts";render()};$("scheduledTab").onclick=()=>{view="scheduled";render()};
-window.cancelSchedule=async id=>{try{await api("/api/schedule/"+id,{method:"DELETE"});await refresh()}catch(e){msg(e.message)}};
-refresh();setInterval(refresh,20000);
-</script></body></html>
+*{box-sizing:border-box}body{margin:0;background:#0d0d0f;color:#f5f5f5;font-family:system-ui,-apple-system,sans-serif}main{max-width:720px;margin:auto;padding:22px 16px 60px}.top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:24px}.brand{font-size:22px;font-weight:800}.status{font-size:12px;color:#aaa;border:1px solid #333;border-radius:30px;padding:7px 10px}.card{background:#18181b;border:1px solid #29292e;border-radius:18px;padding:17px;margin:14px 0}h2{font-size:17px;margin:0 0 14px}label{display:block;color:#aaa;font-size:13px;margin:12px 0 7px}input,textarea,select{width:100%;border:1px solid #39393f;background:#101012;color:white;border-radius:11px;padding:12px;font:inherit}textarea{min-height:145px;resize:vertical;line-height:1.5}button{border:0;border-radius:11px;padding:12px 15px;background:#fff;color:#111;font-weight:750;font-size:14px;cursor:pointer}button:disabled{opacity:.5;cursor:wait}button.secondary{background:#303036;color:#fff}button.danger{background:#492326;color:#ffd9dc}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.actions button{flex:1}.muted{color:#999;font-size:12px;line-height:1.5}.item{border-top:1px solid #303036;padding:13px 0}.item p{white-space:pre-wrap;line-height:1.5;margin:7px 0;overflow-wrap:anywhere}.pill{font-size:11px;color:#bbb}.tabs{display:flex;gap:8px;margin-bottom:15px}.tabs button{flex:1}.notice{font-size:13px;color:#f0c778;line-height:1.5}.hidden{display:none!important}
+</style>
+<script src="/app.js?v=4" defer></script>
+</head>
+<body><main>
+<div class="top"><div class="brand">◉ Threads 자동화</div><div class="status" id="status">화면 준비 중</div></div>
+<div class="card">
+<h2>AI 게시글 작성</h2>
+<label for="topic">게시글 주제</label><input id="topic" placeholder="예: 요즘 관심 있는 기술, 일상 이야기">
+<label for="tone">말투</label><select id="tone"><option>친근한</option><option>정보 전달형</option><option>재미있는</option><option>전문적인</option><option>공감형</option></select>
+<div class="actions"><button id="generate" type="button">AI 글 생성</button></div>
+<label for="post">게시글 내용</label><textarea id="post" placeholder="생성된 글이 여기에 표시됩니다. 직접 수정할 수도 있어요."></textarea>
+<div class="actions"><button id="publish" type="button">지금 게시하기</button><button class="secondary" id="showSchedule" type="button">예약 게시</button></div>
+<div id="scheduleBox" class="hidden"><label for="when">게시 예약 시간</label><input id="when" type="datetime-local"><div class="actions"><button id="schedule" type="button">예약 등록</button></div></div>
+<p class="muted" id="message" role="status">앱 연결을 확인하고 있어요.</p>
+</div>
+<div class="card"><div class="tabs"><button class="secondary" id="historyTab" type="button">게시 기록</button><button class="secondary" id="scheduledTab" type="button">예약 목록</button></div><div id="list"></div></div>
+<p class="notice">※ 자동 게시에는 Railway의 THREADS_ACCESS_TOKEN이 필요합니다. AI 글 생성에는 GEMINI_API_KEY가 필요합니다.</p>
+</main></body></html>
