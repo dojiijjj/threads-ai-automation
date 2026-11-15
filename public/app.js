@@ -4,7 +4,8 @@
   let data = { posts: [], scheduled: [] };
   let view = 'posts';
   let linkInfo = null;
-  let productImagePublishSource = '';
+  let publishImageSource = '';
+  let entertainmentNewsItem = null;
   let currentCategory = 'toss';
 
   function message(value) { $('message').textContent = value; }
@@ -71,12 +72,16 @@
     $('linkPreview').classList.toggle('hidden', !isAffiliate);
     $('todayIssue').classList.toggle('hidden', isAffiliate);
     $('todayDaily').classList.toggle('hidden', isAffiliate);
+    $('entertainmentNews').classList.toggle('hidden', isAffiliate);
+    entertainmentNewsItem = null;
+    $('newsImageWrap').classList.add('hidden');
+    $('newsImage').removeAttribute('src');
     $('topicLabel').textContent = isAffiliate ? '상품명' : '조사할 키워드';
     $('topic').placeholder = '';
     $('generate').textContent = isAffiliate ? 'AI 글 생성' : '키워드 조사 후 글 생성';
     $('affiliateLabel').textContent = '토스 쉐어링크';
     linkInfo = null;
-    productImagePublishSource = '';
+    publishImageSource = '';
     $('productImageWrap').classList.add('hidden');
     $('productImage').removeAttribute('src');
     $('linkInfo').textContent = '';
@@ -174,13 +179,13 @@
     button.disabled = true;
     $('linkInfo').textContent = '상품 페이지 정보를 읽는 중...';
     $('productImageWrap').classList.add('hidden');
-    productImagePublishSource = '';
+    publishImageSource = '';
     $('productImage').removeAttribute('src');
     try {
       linkInfo = await api('/api/link-preview?url=' + encodeURIComponent(url));
       if (linkInfo.title && !$('topic').value.trim()) $('topic').value = linkInfo.title;
       if (linkInfo.image) {
-        productImagePublishSource = linkInfo.image;
+        publishImageSource = linkInfo.image;
         $('productImage').src = '/api/product-image?url=' + encodeURIComponent(linkInfo.image);
         $('productImageWrap').classList.remove('hidden');
       }
@@ -200,7 +205,7 @@
 
   $('productImage').addEventListener('error', () => {
     $('productImageWrap').classList.add('hidden');
-    productImagePublishSource = '';
+    publishImageSource = '';
     $('linkInfo').textContent += ' 상품 사진을 불러오지 못했습니다.';
   });
 
@@ -244,6 +249,51 @@
     }
   }
 
+  $('entertainmentNews').addEventListener('click', async () => {
+    const button = $('entertainmentNews');
+    if ($('category').value !== 'daily') {
+      $('category').value = 'daily';
+      updateCategoryFields();
+    }
+    button.disabled = true;
+    entertainmentNewsItem = null;
+    publishImageSource = '';
+    $('newsImageWrap').classList.add('hidden');
+    $('newsImage').removeAttribute('src');
+    message('실시간 연예계 최신 기사와 대표 사진을 검색하는 중...');
+    try {
+      const found = await api('/api/entertainment-news');
+      const item = found.item;
+      if (!item || !item.title || !item.image) throw new Error('기사 제목이나 대표 사진을 찾지 못했습니다.');
+      entertainmentNewsItem = item;
+      publishImageSource = item.image;
+      $('topic').value = item.title;
+      $('newsImage').src = '/api/product-image?url=' + encodeURIComponent(item.image);
+      $('newsImageWrap').classList.remove('hidden');
+      const date = item.publishedAt ? new Date(item.publishedAt) : null;
+      const dateText = date && !Number.isNaN(date.getTime()) ? date.toLocaleString('ko-KR') : '';
+      $('newsInfo').textContent = [item.source, dateText].filter(Boolean).join(' · ') + ' · 게시 시 사진 자동 첨부';
+      message('기사 선택 완료. 제목으로 시작하는 Threads 글을 작성 중...');
+      const generated = await api('/api/generate', {
+        method: 'POST',
+        body: JSON.stringify({
+          category: 'daily',
+          topic: item.title,
+          entertainmentNews: true,
+          newsItem: item,
+          tone: $('tone').value
+        })
+      });
+      $('post').value = generated.text || '';
+      $('comment').value = '';
+      message('연예계 뉴스 글 생성 완료. 첫 문장은 기사 제목이며, 사진은 게시할 때 자동 첨부돼요.');
+    } catch (err) {
+      message('연예계 뉴스 생성 실패: ' + errorText(err));
+    } finally {
+      button.disabled = false;
+    }
+  });
+
   $('generate').addEventListener('click', () => generatePost(false));
   $('todayIssue').addEventListener('click', () => generatePost(true, false));
   $('todayDaily').addEventListener('click', () => generatePost(false, true));
@@ -257,7 +307,7 @@
     try {
       const result = await api('/api/publish', {
         method: 'POST',
-        body: JSON.stringify({ text, commentText: $('comment').value.trim(), category: currentCategory, imageSource: productImagePublishSource })
+        body: JSON.stringify({ text, commentText: $('comment').value.trim(), category: currentCategory, imageSource: publishImageSource })
       });
       $('post').value = '';
       if (result.commentPosted) {
@@ -295,7 +345,7 @@
     try {
       await api('/api/schedule', {
         method: 'POST',
-        body: JSON.stringify({ text, commentText: $('comment').value.trim(), at: $('when').value, category: currentCategory, imageSource: productImagePublishSource })
+        body: JSON.stringify({ text, commentText: $('comment').value.trim(), at: $('when').value, category: currentCategory, imageSource: publishImageSource })
       });
       message(categoryLabel(currentCategory) + ' 게시글과 첫 댓글 예약 등록 완료.');
       $('scheduleBox').classList.add('hidden');
