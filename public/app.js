@@ -49,8 +49,12 @@
     const isAffiliate = currentCategory !== 'daily';
     $('affiliateWrap').classList.toggle('hidden', !isAffiliate);
     $('linkPreview').classList.toggle('hidden', !isAffiliate);
-    $('topicLabel').textContent = isAffiliate ? '상품명' : '게시글 주제';
-    $('topic').placeholder = isAffiliate ? '상품명 입력' : '게시글 주제 입력';
+    $('todayIssue').classList.toggle('hidden', isAffiliate);
+    $('topicLabel').textContent = isAffiliate ? '상품명' : '조사할 키워드';
+    $('topic').placeholder = isAffiliate
+      ? '상품명 입력'
+      : '예: 부산 화재, 전기차 보조금, AI 규제';
+    $('generate').textContent = isAffiliate ? 'AI 글 생성' : '키워드 조사 후 글 생성';
     $('affiliateLabel').textContent = '토스 쉐어링크';
     linkInfo = null;
     $('linkInfo').textContent = '';
@@ -162,24 +166,29 @@
     }
   });
 
-  $('generate').addEventListener('click', async () => {
-    const button = $('generate');
+  async function generatePost(todayIssue) {
+    const button = todayIssue ? $('todayIssue') : $('generate');
     const topic = $('topic').value.trim();
-    if (!topic) { message('상품명 또는 게시글 주제를 입력해 주세요.'); $('topic').focus(); return; }
-    if (currentCategory !== 'daily' && !$('affiliateLink').value.trim()) {
+    if (!todayIssue && !topic) {
+      message('조사할 키워드를 입력해 주세요.');
+      $('topic').focus();
+      return;
+    }
+    if (!todayIssue && currentCategory !== 'daily' && !$('affiliateLink').value.trim()) {
       message('제휴 링크를 붙여 넣어 주세요.');
       $('affiliateLink').focus();
       return;
     }
     button.disabled = true;
-    message('AI 글 생성 중...');
+    message(todayIssue ? '오늘 대한민국의 주요 뉴스와 이슈를 조사 중...' : (currentCategory === 'daily' ? '키워드 관련 사건과 최신 자료를 조사 중...' : 'AI 글 생성 중...'));
     try {
       const result = await api('/api/generate', {
         method: 'POST',
         body: JSON.stringify({
           category: currentCategory,
           topic,
-          productName: topic,
+          productName: currentCategory === 'daily' ? '' : topic,
+          todayIssue: Boolean(todayIssue),
           tone: $('tone').value,
           affiliateLink: $('affiliateLink').value,
           linkInfo
@@ -187,39 +196,16 @@
       });
       $('post').value = result.text || '';
       $('comment').value = result.commentText || '';
-      message((result.mode || 'AI') + ' 게시글과 첫 댓글을 생성했습니다. 각각 내용을 확인해 주세요.');
+      message((result.mode || 'AI') + '으로 3단락 게시글' + (todayIssue ? '을 만들었습니다.' : '을 생성했습니다.'));
     } catch (err) {
       message('글 생성 실패: ' + errorText(err));
     } finally {
       button.disabled = false;
     }
-  });
+  }
 
-  $('copyPost').addEventListener('click', async () => {
-    const text = $('post').value.trim();
-    if (!text) { message('복사할 글이 없습니다.'); return; }
-    try {
-      await navigator.clipboard.writeText(text);
-      message('게시글을 복사했습니다.');
-    } catch (_) {
-      $('post').focus();
-      $('post').select();
-      message('글을 선택했습니다. 복사를 눌러 복사해 주세요.');
-    }
-  });
-
-  $('copyComment').addEventListener('click', async () => {
-    const text = $('comment').value.trim();
-    if (!text) { message('복사할 첫 댓글이 없습니다.'); return; }
-    try {
-      await navigator.clipboard.writeText(text);
-      message('첫 댓글을 복사했습니다.');
-    } catch (_) {
-      $('comment').focus();
-      $('comment').select();
-      message('첫 댓글을 선택했습니다. 복사를 눌러 복사해 주세요.');
-    }
-  });
+  $('generate').addEventListener('click', () => generatePost(false));
+  $('todayIssue').addEventListener('click', () => generatePost(true));
 
   $('publish').addEventListener('click', async () => {
     const text = $('post').value.trim();
@@ -277,27 +263,6 @@
     }
   });
 
-
-  $('checkReply').addEventListener('click', async () => {
-    const button = $('checkReply');
-    button.disabled = true;
-    message('댓글 발행 권한 확인 중...');
-    try {
-      const result = await api('/api/reply-status');
-      if (result.canReply) {
-        const quota = result.replyQuotaTotal
-          ? ' · 남은 한도 ' + Math.max(0, result.replyQuotaTotal - result.replyQuotaUsed) + '/' + result.replyQuotaTotal
-          : '';
-        message('댓글 발행 권한 확인 완료 (@' + (result.username || '') + ')' + quota);
-      } else {
-        message('댓글 발행 권한 확인 실패: ' + (result.error || '권한을 확인할 수 없습니다.'));
-      }
-    } catch (err) {
-      message('댓글 권한 확인 실패: ' + errorText(err));
-    } finally {
-      button.disabled = false;
-    }
-  });
 
   $('historyTab').addEventListener('click', () => { view = 'posts'; render(); });
   $('scheduledTab').addEventListener('click', () => { view = 'scheduled'; render(); });
