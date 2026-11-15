@@ -3,19 +3,33 @@
   const $ = (id) => document.getElementById(id);
   let data = { posts: [], scheduled: [] };
   let view = 'posts';
+  let linkInfo = null;
+  let currentCategory = 'toss';
 
   function message(value) { $('message').textContent = value; }
   function errorText(err) { return err && err.message ? err.message : String(err); }
+  function categoryLabel(value) {
+    return value === 'toss' ? '토스' : value === 'coupang' ? '쿠팡' : '일상';
+  }
 
   async function api(url, options) {
     const opts = options || {};
     const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
-    const response = await fetch(url, Object.assign({}, opts, { headers }));
-    let result;
-    try { result = await response.json(); }
-    catch (_) { throw new Error('서버 응답을 읽을 수 없습니다.'); }
-    if (!response.ok) throw new Error(result.error || ('요청 실패 (' + response.status + ')'));
-    return result;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 35000);
+    try {
+      const response = await fetch(url, Object.assign({}, opts, { headers, signal: controller.signal }));
+      let result;
+      try { result = await response.json(); }
+      catch (_) { throw new Error('서버 응답을 읽을 수 없습니다.'); }
+      if (!response.ok) throw new Error(result.error || ('요청 실패 (' + response.status + ')'));
+      return result;
+    } catch (err) {
+      if (err.name === 'AbortError') throw new Error('요청 시간이 초과됐습니다. 잠시 후 다시 시도해 주세요.');
+      throw err;
+    } finally {
+      window.clearTimeout(timer);
+    }
   }
 
   function addText(parent, tag, className, value) {
@@ -24,6 +38,21 @@
     node.textContent = value == null ? '' : String(value);
     parent.appendChild(node);
     return node;
+  }
+
+  function updateCategoryFields() {
+    currentCategory = $('category').value;
+    const isAffiliate = currentCategory !== 'daily';
+    $('affiliateWrap').classList.toggle('hidden', !isAffiliate);
+    $('alternateWrap').classList.toggle('hidden', !isAffiliate);
+    $('linkPreview').classList.toggle('hidden', !isAffiliate);
+    $('topicLabel').textContent = isAffiliate ? '상품명' : '게시글 주제';
+    $('topic').placeholder = isAffiliate ? '예: 무선 청소기, 텀블러' : '예: 오늘 있었던 일, 관심 있는 이야기';
+    $('affiliateLabel').textContent = currentCategory === 'toss' ? '토스 쉐어링크' : '쿠팡 파트너스 링크';
+    $('alternateLabel').textContent = currentCategory === 'toss' ? '함께 넣을 쿠팡 링크 (선택)' : '함께 넣을 토스 링크 (선택)';
+    $('linkHelp').textContent = '제휴 플랫폼에서 직접 복사한 내 링크를 붙여 넣으세요. 토스 API 연결은 필요하지 않습니다.';
+    linkInfo = null;
+    $('linkInfo').textContent = '';
   }
 
   function render() {
@@ -43,7 +72,7 @@
         const parsed = new Date(time);
         shownTime = Number.isNaN(parsed.getTime()) ? '' : parsed.toLocaleString();
       }
-      addText(box, 'span', 'pill', (item.status || '') + (shownTime ? ' · ' + shownTime : ''));
+      addText(box, 'span', 'pill', '[' + categoryLabel(item.category || 'daily') + '] ' + (item.status || '') + (shownTime ? ' · ' + shownTime : ''));
       addText(box, 'p', '', item.text || '');
       if (view === 'scheduled' && item.status === '예약 대기') {
         const cancel = document.createElement('button');
@@ -86,23 +115,73 @@
     }
   }
 
+  $('category').addEventListener('change', updateCategoryFields);
+
+  $('linkPreview').addEventListener('click', async () => {
+    const url = $('affiliateLink').value.trim();
+    if (!url) { message('먼저 제휴 링크를 붙여 넣어 주세요.'); $('affiliateLink').focus(); return; }
+    const button = $('linkPreview');
+    button.disabled = true;
+    $('linkInfo').textContent = '상품 페이지 정보를 읽는 중...';
+    try {
+      linkInfo = await api('/api/link-preview?url=' + encodeURIComponent(url));
+      if (linkInfo.title && !$('topic').value.trim()) $('topic').value = linkInfo.title;
+      const details = [linkInfo.title, linkInfo.description].filter(Boolean).join(' / ');
+      $('linkInfo').textContent = details ? '읽어온 정보: ' + details : '페이지 제목을 찾지 못했습니다. 상품명을 직접 입력해 주세요.';
+      message('링크 정보 확인 완료. 상품명과 설명을 확인해 주세요.');
+    } catch (err) {
+      linkInfo = null;
+      $('linkInfo').textContent = '자동으로 읽지 못했습니다. 상품명과 특징을 직접 입력하면 계속 진행할 수 있어요.';
+      message('링크 미리보기: ' + errorText(err));
+    } finally {
+      button.disabled = false;
+    }
+  });
+
   $('generate').addEventListener('click', async () => {
     const button = $('generate');
     const topic = $('topic').value.trim();
-    if (!topic) { message('먼저 게시글 주제를 입력해 주세요.'); $('topic').focus(); return; }
+    if (!topic) { message('상품명 또는 게시글 주제를 입력해 주세요.'); $('topic').focus(); return; }
+    if (currentCategory !== 'daily' && !$('affiliateLink').value.trim()) {
+      message('제휴 링크를 붙여 넣어 주세요.');
+      $('affiliateLink').focus();
+      return;
+    }
     button.disabled = true;
     message('AI 글 생성 중...');
     try {
       const result = await api('/api/generate', {
         method: 'POST',
-        body: JSON.stringify({ topic: topic, tone: $('tone').value })
+        body: JSON.stringify({
+          category: currentCategory,
+          topic,
+          productName: topic,
+          details: $('details').value.trim(),
+          tone: $('tone').value,
+          affiliateLink: $('affiliateLink').value.trim(),
+          alternateLink: $('alternateLink').value.trim(),
+          linkInfo
+        })
       });
       $('post').value = result.text || '';
-      message((result.mode || 'AI') + ' 글 생성 완료. 내용을 확인해 주세요.');
+      message((result.mode || 'AI') + ' 글 생성 완료. 링크와 제휴 고지 문구까지 넣었어요. 게시 전 내용을 확인해 주세요.');
     } catch (err) {
       message('글 생성 실패: ' + errorText(err));
     } finally {
       button.disabled = false;
+    }
+  });
+
+  $('copyPost').addEventListener('click', async () => {
+    const text = $('post').value.trim();
+    if (!text) { message('복사할 글이 없습니다.'); return; }
+    try {
+      await navigator.clipboard.writeText(text);
+      message('게시글을 복사했습니다.');
+    } catch (_) {
+      $('post').focus();
+      $('post').select();
+      message('글을 선택했습니다. 복사를 눌러 복사해 주세요.');
     }
   });
 
@@ -113,7 +192,10 @@
     button.disabled = true;
     message('Threads에 게시 중...');
     try {
-      await api('/api/publish', { method: 'POST', body: JSON.stringify({ text: text }) });
+      await api('/api/publish', {
+        method: 'POST',
+        body: JSON.stringify({ text, category: currentCategory })
+      });
       $('post').value = '';
       view = 'posts';
       message('게시 완료.');
@@ -138,9 +220,9 @@
     try {
       await api('/api/schedule', {
         method: 'POST',
-        body: JSON.stringify({ text: text, at: $('when').value })
+        body: JSON.stringify({ text, at: $('when').value, category: currentCategory })
       });
-      message('예약 등록 완료.');
+      message(categoryLabel(currentCategory) + ' 유형 예약 등록 완료.');
       $('scheduleBox').classList.add('hidden');
       view = 'scheduled';
       await refresh();
@@ -161,6 +243,7 @@
     message('처리하지 못한 오류: ' + errorText(event.reason));
   });
 
+  updateCategoryFields();
   message('화면 스크립트가 실행됐습니다. 서버 연결 확인 중...');
   refresh();
   window.setInterval(refresh, 20000);
