@@ -208,6 +208,77 @@
     $('linkInfo').textContent += ' 상품 사진을 불러오지 못했습니다.';
   });
 
+
+  let communityStories = [];
+
+  function renderCommunityStories(payload) {
+    const list = $('communityStoryList');
+    list.replaceChildren();
+    const sources = Array.isArray(payload.sources) ? payload.sources : [];
+    const failed = sources.filter(item => !item.ok);
+    if (failed.length) {
+      addText(list, 'p', 'muted', '수집이 제한된 곳: ' + failed.map(item => item.source).join(', '));
+    }
+    communityStories = Array.isArray(payload.stories) ? payload.stories : [];
+    if (!communityStories.length) {
+      addText(list, 'p', 'muted', '가져온 인기글이 없습니다. 잠시 후 다시 검색해 주세요.');
+      return;
+    }
+    communityStories.forEach((story, index) => {
+      const box = document.createElement('div');
+      box.className = 'item';
+      addText(box, 'span', 'pill', story.source || '커뮤니티');
+      addText(box, 'p', '', story.title || '제목 없음');
+      const choose = document.createElement('button');
+      choose.type = 'button';
+      choose.className = 'secondary';
+      choose.textContent = '이 썰로 글 만들기';
+      choose.addEventListener('click', async () => {
+        choose.disabled = true;
+        message('원문 내용을 읽고 내 시점의 썰로 바꾸는 중...');
+        try {
+          const result = await api('/api/community-story-generate', {
+            method: 'POST',
+            body: JSON.stringify({
+              sourceId: story.sourceId,
+              title: story.title,
+              url: story.url
+            })
+          });
+          $('category').value = 'daily';
+          updateCategoryFields();
+          $('post').value = result.text || '';
+          $('comment').value = '';
+          message((result.source || '커뮤니티') + ' 인기글을 1인칭 썰로 재구성했어요. 확인 후 게시하면 돼요.');
+          $('post').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } catch (err) {
+          message('썰 생성 실패: ' + errorText(err));
+        } finally {
+          choose.disabled = false;
+        }
+      });
+      box.appendChild(choose);
+      list.appendChild(box);
+    });
+  }
+
+  $('searchCommunityStories').addEventListener('click', async () => {
+    const button = $('searchCommunityStories');
+    button.disabled = true;
+    $('communityStoryList').replaceChildren();
+    message('5개 커뮤니티의 공개 인기글을 확인하는 중...');
+    try {
+      const result = await api('/api/community-stories');
+      renderCommunityStories(result);
+      const available = (result.sources || []).filter(item => item.ok).length;
+      message('인기 썰 ' + (result.stories || []).length + '개를 가져왔어요. ' + available + '/5개 커뮤니티 연결 성공.');
+    } catch (err) {
+      message('커뮤니티 검색 실패: ' + errorText(err));
+    } finally {
+      button.disabled = false;
+    }
+  });
+
   async function generatePost(todayIssue, todayDaily) {
     const button = todayIssue ? $('todayIssue') : (todayDaily ? $('todayDaily') : $('generate'));
     const topic = $('topic').value.trim();
