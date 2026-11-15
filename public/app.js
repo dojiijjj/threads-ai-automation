@@ -20,7 +20,7 @@
     const opts = options || {};
     const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
     const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 35000);
+    const timer = window.setTimeout(() => controller.abort(), 90000);
     try {
       const response = await fetch(url, Object.assign({}, opts, { headers, signal: controller.signal }));
       let result;
@@ -50,9 +50,8 @@
     $('affiliateWrap').classList.toggle('hidden', !isAffiliate);
     $('linkPreview').classList.toggle('hidden', !isAffiliate);
     $('topicLabel').textContent = isAffiliate ? '상품명' : '게시글 주제';
-    $('topic').placeholder = isAffiliate ? '링크 미리보기에서 자동으로 채워집니다. 필요하면 직접 입력하세요.' : '예: 오늘 있었던 일, 관심 있는 이야기';
+    $('topic').placeholder = isAffiliate ? '상품명 입력' : '게시글 주제 입력';
     $('affiliateLabel').textContent = '토스 쉐어링크';
-    $('linkHelp').textContent = '링크 앞뒤에 설명이나 다른 글자가 있어도 괜찮아요. 입력 내용에서 https:// 링크를 자동으로 찾아냅니다. 토스 API 연결은 필요하지 않습니다.';
     linkInfo = null;
     $('linkInfo').textContent = '';
   }
