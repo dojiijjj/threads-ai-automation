@@ -186,6 +186,7 @@ $("fetchArticle").onclick=async()=>{
   addInfoRow(box,"언론사",data.publisher);
   addInfoRow(box,"기자",data.author);
   addInfoRow(box,"게시일",data.published);
+  addInfoRow(box,"본문 수집 방식",data.bodySourceLabel||"기사 본문");
   addInfoRow(box,"기사 사진",(data.images||[]).length+"장");
   $("articlePanel").classList.remove("hidden");
   msg("기사 정보를 가져왔어. 아래 버튼을 눌러 새 글을 생성해 줘.");
@@ -209,9 +210,10 @@ $("randomArticle").onclick=async()=>{
   addInfoRow(box,"언론사",data.publisher);
   addInfoRow(box,"기자",data.author);
   addInfoRow(box,"게시일",data.published);
+  addInfoRow(box,"본문 수집 방식",data.bodySourceLabel||"기사 본문");
   addInfoRow(box,"기사 사진",(data.images||[]).length+"장");
   $("articlePanel").classList.remove("hidden");
-  msg(data.sourceName+"에서 기사를 무작위로 골라 본문을 추출했어. 아래 버튼을 눌러 블로그 글을 생성해 줘.");
+  msg(data.bodySource==="rss-summary"?"원문 페이지 접근이 제한되어 "+data.sourceName+" RSS 요약을 가져왔어. 요약에 있는 사실만으로 글을 생성해 줘.":"완료. "+data.sourceName+"에서 기사 본문을 가져왔어. 아래 버튼을 눌러 블로그 글을 생성해 줘.");
  }catch(e){msg("랜덤 기사 추출 실패: "+e.message);}
  finally{button.disabled=false;}
 };
