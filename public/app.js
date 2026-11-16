@@ -109,10 +109,10 @@ function renderArticle(){
   photoIndex++;
  }
  if(contentMode==="product")addShareDisclosure(editor);
- if((contentMode==="article"||contentMode==="instagram")&&articleInfo){
+ if(contentMode==="article"&&articleInfo){
   const source=document.createElement("p");
   source.className="articleSource";
-  const label=document.createElement("span");label.textContent=contentMode==="instagram"?"원본 인스타그램: ":"원문 기사: ";
+  const label=document.createElement("span");label.textContent="원문 기사: ";
   const link=document.createElement("a");link.href=articleInfo.url;link.textContent=articleInfo.title||articleInfo.publisher||articleInfo.url;
   link.target="_blank";link.rel="noopener noreferrer";
   source.append(label,link);editor.appendChild(source);
@@ -170,28 +170,6 @@ $("fetchProduct").onclick=async()=>{
  }catch(e){msg("상품 정보 수집 실패: "+e.message);}
  finally{button.disabled=false;}
 };
-
-$("fetchInstagram").onclick=async()=>{
- const url=$("instagramUrl").value.trim();
- if(!url){msg("인스타그램 게시물 링크를 입력해 줘.");$("instagramUrl").focus();return;}
- const button=$("fetchInstagram");button.disabled=true;
- $("productPanel").classList.add("hidden");$("articlePanel").classList.add("hidden");$("instagramPanel").classList.add("hidden");$("result").classList.add("hidden");
- productInfo=null;articleInfo=null;resultData=null;foundImages=[];currentShareUrl="";contentMode="instagram";
- msg("인스타그램 게시물의 공개 캡션과 사진 정보를 가져오는 중...");
- try{
-  const imagesAuthorized=$("instagramImagesAuthorized").checked;
-  const data=await api("/api/instagram-preview?url="+encodeURIComponent(url)+"&imagesAuthorized="+(imagesAuthorized?"1":"0"));
-  articleInfo=data;
-  const box=$("instagramInfo");box.replaceChildren();
-  addInfoRow(box,"게시물",data.title);
-  addInfoRow(box,"캡션",data.body);
-  addInfoRow(box,"사진",(data.images||[]).length+"장");
-  addInfoRow(box,"영상",data.video?"영상 링크 확인됨":"영상 정보 확인 안 됨");
-  $("instagramPanel").classList.remove("hidden");
-  msg("인스타그램 게시물 정보를 가져왔어. 아래 버튼을 눌러 블로그 글을 생성해 줘.");
- }catch(e){msg("인스타그램 정보 수집 실패: "+e.message);}
- finally{button.disabled=false;}
-};
 $("fetchArticle").onclick=async()=>{
  const url=$("articleUrl").value.trim();
  if(!url){msg("기사 링크를 입력해 줘.");$("articleUrl").focus();return;}
@@ -231,25 +209,21 @@ $("generate").onclick=async()=>{
  }catch(e){msg("글 생성 실패: "+e.message);}
  finally{button.disabled=false;}
 };
-
-async function generateFromSource(mode,buttonId){
- if(!articleInfo){msg("먼저 정보를 가져와 줘.");return;}
- const button=$(buttonId);button.disabled=true;
- $("result").classList.add("hidden");resultData=null;foundImages=[];
- contentMode=mode;currentShareUrl="";
- msg((mode==="instagram"?"인스타그램 게시물":"기사")+" 내용을 바탕으로 새 블로그 글을 작성 중...");
+$("generateArticle").onclick=async()=>{
+ if(!articleInfo){msg("먼저 기사 정보를 가져와 줘.");return;}
+ const button=$("generateArticle");button.disabled=true;
+ $("result").classList.add("hidden");resultData=null;foundImages=[];contentMode="article";currentShareUrl="";
+ msg("기사 내용을 바탕으로 새 블로그 글을 작성 중...");
  try{
   resultData=await api("/api/generate-article",{method:"POST",body:JSON.stringify({url:articleInfo.url})});
   foundImages=(articleInfo.images||[]).slice(0,20).map(url=>new URL(url,location.origin).toString());
   $("title").value=resultData.title||"";
   renderArticle();
   $("result").classList.remove("hidden");
-  msg("완료. 게시물 내용과 사용 권한을 확인한 사진 "+foundImages.length+"장을 본문에 넣었어.");
- }catch(e){msg((mode==="instagram"?"인스타그램":"기사")+" 글 생성 실패: "+e.message);}
+  msg("완료. 기사 내용과 사용 권한을 확인한 사진 "+foundImages.length+"장을 본문에 넣었어.");
+ }catch(e){msg("기사 글 생성 실패: "+e.message);}
  finally{button.disabled=false;}
-}
-$("generateArticle").onclick=()=>generateFromSource("article","generateArticle");
-$("generateInstagram").onclick=()=>generateFromSource("instagram","generateInstagram");
+};
 
 $("copyHtml").onclick=async()=>{
  if(!resultData||!articleText().trim()){msg("먼저 글을 생성해 줘.");return;}
