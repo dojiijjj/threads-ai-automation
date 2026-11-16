@@ -315,22 +315,22 @@ async function fetchNewsText(raw,depth=0){
  }finally{clearTimeout(timer);}
 }
 function xmlValue(block,tag){
- const re=new RegExp("<"+tag+"(?:\\\\s[^>]*)?>([\\\\s\\\\S]*?)</"+tag+"\\\\s*>","i");
+ const re=new RegExp("<"+tag+"(?:\\s[^>]*)?>([\\s\\S]*?)</"+tag+"\\s*>","i");
  const match=String(block||"").match(re);if(!match)return "";
- return match[1].replace(/<!\\[CDATA\\[/g,"").replace(/\\]\\]>/g,"").replace(/&#x([\\da-f]{1,6});/gi,(_,n)=>String.fromCodePoint(parseInt(n,16))).replace(/&apos;/gi,"'").replace(/&quot;/gi,'"').replace(/&amp;/gi,"&").replace(/&lt;/gi,"<").replace(/&gt;/gi,">").trim();
+ return match[1].replace(/<!\[CDATA\[/g,"").replace(/\]\]>/g,"").replace(/&#x([\da-f]{1,6});/gi,(_,n)=>String.fromCodePoint(parseInt(n,16))).replace(/&apos;/gi,"'").replace(/&quot;/gi,'"').replace(/&amp;/gi,"&").replace(/&lt;/gi,"<").replace(/&gt;/gi,">").trim();
 }
 function parseNewsFeed(xml){
- const entries=[...String(xml||"").matchAll(/<(item|entry)\\b[^>]*>([\\s\\S]*?)<\\/\\1>/gi)];
+ const entries=[...String(xml||"").matchAll(/<(item|entry)\b[^>]*>([\s\S]*?)<\/\1>/gi)];
  const items=[];
  for(const match of entries){
   const block=match[2]||"";
   let link=xmlValue(block,"link");
   if(!link){
-   const tag=block.match(/<link\\b[^>]*href=["']([^"']+)["'][^>]*\\/?\\s*>/i);
+   const tag=block.match(/<link\b[^>]*href=["']([^"']+)["'][^>]*\/?\s*>/i);
    if(tag)link=tag[1];
   }
   const title=xmlValue(block,"title");
-  if(!link||!/^https?:\\/\\//i.test(link)||!title)continue;
+  if(!link||!/^https?:\/\//i.test(link)||!title)continue;
   items.push({title:decode(title),url:link.trim()});
  }
  const seen=new Set();
