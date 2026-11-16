@@ -198,7 +198,7 @@ $("randomArticle").onclick=async()=>{
  const button=$("randomArticle");button.disabled=true;
  $("productPanel").classList.add("hidden");$("articlePanel").classList.add("hidden");$("result").classList.add("hidden");
  productInfo=null;articleInfo=null;resultData=null;foundImages=[];currentShareUrl="";contentMode="article";
- msg("7개 뉴스 출처 중 하나를 같은 확률로 선택하고 기사를 가져오는 중...");
+ msg("7개 뉴스 출처 중 하나를 같은 확률로 선택하고 있어. 해당 출처에서 읽지 못하면 9개 분야 중 하나를 Google 검색으로 다시 찾아...");
  try{
   const imagesAuthorized=$("articleImagesAuthorized").checked;
   const data=await api("/api/random-article?imagesAuthorized="+(imagesAuthorized?"1":"0"));
