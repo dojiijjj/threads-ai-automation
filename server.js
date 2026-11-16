@@ -333,7 +333,7 @@ app.get("/api/instagram-preview",async(req,res)=>{
 app.post("/api/generate-article",async(req,res)=>{
  if(!process.env.GEMINI_API_KEY)return res.status(503).json({error:"Railway 환경변수 GEMINI_API_KEY가 필요합니다."});
  let url="";
- try{url=urlOf(req.body.url);}catch(e){return res.status(400).json({error:e.message});}
+ try{url=String(req.body.url||"").includes("instagram.com")?instagramUrlOf(req.body.url):urlOf(req.body.url);}catch(e){return res.status(400).json({error:e.message});}
  try{
   const cached=articleCache.get(url);
   if(!cached||Date.now()-cached.createdAt>30*60*1000)return res.status(409).json({error:"기사 정보가 만료됐습니다. 기사 링크를 먼저 가져와 주세요."});
