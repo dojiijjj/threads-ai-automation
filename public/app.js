@@ -27,9 +27,6 @@ function renderProduct(data){
  addInfoRow(box,"상품 설명",data.description);
  addInfoRow(box,"주요 특징",(data.features||[]).join(" · "));
  addInfoRow(box,"상품 코드",data.sku);
- $("productNotice").textContent=data.images?.length
-  ?"상품페이지에서 실제 이미지 파일 "+data.images.length+"장을 확인했어. 글 생성 후 본문 안에 함께 넣을게."
-  :"사용 가능한 대표 이미지를 찾지 못했어. 깨진 이미지나 대체 이미지는 넣지 않을게.";
  $("productPanel").classList.remove("hidden");
 }
 function isPlainHeading(value){
