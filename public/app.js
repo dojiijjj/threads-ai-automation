@@ -112,7 +112,7 @@ function renderArticle(){
  if((contentMode==="article"||contentMode==="instagram")&&articleInfo){
   const source=document.createElement("p");
   source.className="articleSource";
-  const label=document.createElement("span");label.textContent="원문 기사: ";
+  const label=document.createElement("span");label.textContent=contentMode==="instagram"?"원본 인스타그램: ":"원문 기사: ";
   const link=document.createElement("a");link.href=articleInfo.url;link.textContent=articleInfo.title||articleInfo.publisher||articleInfo.url;
   link.target="_blank";link.rel="noopener noreferrer";
   source.append(label,link);editor.appendChild(source);
