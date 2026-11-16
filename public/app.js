@@ -247,5 +247,5 @@ $("toTistory").onclick=async()=>{
   else msg("HTML 코드는 복사했어. 저장된 내 블로그 주소의 /manage/newpost/ 화면을 직접 열고 HTML 모드에 붙여넣어 줘.");
  }catch(e){msg("티스토리 글쓰기 화면은 열었지만 자동 복사에 실패했어. 글 전체 복사 버튼을 눌러서 붙여넣어 줘.");}
 };
-api("/api/status").then(d=>$("status").textContent=d.aiConfigured?"AI 연결됨":"API 키 설정 필요").catch(()=>$("status").textContent="연결 오류");
+fetch("/api/status?check="+Date.now(),{cache:"no-store",headers:{"Cache-Control":"no-cache"}}).then(r=>{if(!r.ok)throw Error("상태 확인 실패 ("+r.status+")");return r.json();}).then(d=>{$("status").textContent=d.aiConfigured?"AI 연결됨":"API 키 설정 필요";}).catch(()=>$("status").textContent="연결 오류");
 })();
