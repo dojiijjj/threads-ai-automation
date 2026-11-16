@@ -42,10 +42,25 @@ function makeImageFigure(url){
  figure.appendChild(img);
  return figure;
 }
+const SHARE_DISCLOSURE="이 포스팅은 토스쇼핑 쉐어링크 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.";
+const SHARE_URL="https://toss.shopping/_m/rWUawNdn";
+function addShareDisclosure(editor){
+ const p=document.createElement("p");
+ p.className="affiliateDisclosure";
+ p.append(document.createTextNode(SHARE_DISCLOSURE+" "));
+ const link=document.createElement("a");
+ link.href=SHARE_URL;
+ link.textContent=SHARE_URL;
+ link.target="_blank";
+ link.rel="noopener noreferrer";
+ p.appendChild(link);
+ editor.appendChild(p);
+}
 function renderArticle(){
  const editor=$("articleEditor");
  editor.replaceChildren();
  if(!resultData)return;
+ addShareDisclosure(editor);
  const blocks=String(resultData.body||"").trim().split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean);
  const hashtagBlock=blocks.length&&blocks[blocks.length-1].startsWith("#")?blocks.pop():"";
  let photoIndex=0;
@@ -63,6 +78,7 @@ function renderArticle(){
   editor.appendChild(makeImageFigure(foundImages[photoIndex]));
   photoIndex++;
  }
+ addShareDisclosure(editor);
  if(hashtagBlock){
   const tags=document.createElement("p");tags.className="hashtags";tags.textContent=hashtagBlock;
   editor.appendChild(tags);
