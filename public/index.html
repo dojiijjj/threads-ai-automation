@@ -16,7 +16,13 @@ h2{font-size:16px;margin:0 0 12px}
 h3{font-size:14px;margin:18px 0 9px}
 label{display:block;color:#b5b6c0;font-size:13px;margin:12px 0 7px}
 input,textarea{width:100%;border:1px solid #41434f;background:#111319;color:#fff;border-radius:10px;padding:12px;font:inherit}
-textarea{min-height:420px;line-height:1.75;resize:vertical}
+.articleEditor{background:#fff;color:#242424;border:1px solid #41434f;border-radius:10px;padding:16px;min-height:560px;line-height:1.85;font-size:14px;overflow-wrap:anywhere;outline:none}
+.articleEditor:focus{border-color:#9da8f3}
+.articleEditor h2{font-size:18px;color:#111;margin:22px 0 10px}
+.articleEditor p{margin:0 0 15px}
+.articleEditor figure{margin:18px 0 24px;text-align:center}
+.articleEditor figure img{width:100%;height:auto;max-height:420px;object-fit:contain;display:block}
+.articleEditor .hashtags{margin-top:24px;padding-top:12px;border-top:1px solid #eee;font-size:13px;color:#555}
 button{border:0;border-radius:11px;padding:13px 14px;background:#e9eaff;color:#171823;font-weight:800;font-size:14px;cursor:pointer}
 button:disabled{opacity:.5;cursor:wait}
 .secondary{background:#353844;color:#fff}
@@ -30,22 +36,10 @@ button:disabled{opacity:.5;cursor:wait}
 .infoGrid .value{color:#f1f1f4;overflow-wrap:anywhere}
 .productShots{display:flex;gap:9px;overflow-x:auto;margin-top:13px;padding-bottom:4px}
 .productShots img{width:104px;height:104px;object-fit:contain;background:#fff;border-radius:9px;flex:0 0 auto}
-.imageGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
-.imageCard{background:#12141a;border:1px solid #363944;border-radius:12px;overflow:hidden;min-width:0}
-.imageCard img{width:100%;height:160px;object-fit:cover;display:block;background:#252832}
-.imageCard .meta{padding:10px}
-.imageCard .name{font-size:12px;line-height:1.4;font-weight:700;overflow-wrap:anywhere}
-.articlePreview{background:#fff;color:#242424;border-radius:12px;padding:16px;line-height:1.85;font-size:14px;overflow-wrap:anywhere}
-.articlePreview h1{font-size:21px;color:#111;margin:0 0 18px;line-height:1.4}
-.articlePreview h2{font-size:18px;color:#111;margin:22px 0 10px}
-.articlePreview p{margin:0 0 15px}
-.articlePreview figure{margin:18px 0 24px}
-.articlePreview figure img{width:100%;max-height:380px;object-fit:contain;display:block}
 .step{display:flex;gap:8px;align-items:center;font-size:12px;color:#aaa;margin-top:8px}
 .dot{width:7px;height:7px;border-radius:50%;background:#8192d8;flex:none}
-@media(max-width:480px){.imageGrid{grid-template-columns:1fr 1fr}.imageCard img{height:125px}}
 </style>
-<script src="/app.js?v=8" defer></script>
+<script src="/app.js?v=9" defer></script>
 </head>
 <body><main>
 <div class="top"><div class="brand">✍️ Google SEO 상품 블로그</div><div class="status" id="status">연결 확인 중</div></div>
@@ -68,23 +62,17 @@ button:disabled{opacity:.5;cursor:wait}
 
 <div id="result" class="hidden">
 <div class="card">
-<h2>3. 구글 SEO 포스팅 결과</h2>
-<div id="keywords" class="muted"></div>
-<label for="title">추천 제목</label>
+<h2>3. 완성된 글</h2>
+<label for="title">제목</label>
 <input id="title" type="text">
-<label for="body">본문과 해시태그 20개</label>
-<textarea id="body"></textarea>
-<div class="actions"><button id="copyHtml" class="secondary">글 전체 복사</button><button id="copyText" class="secondary">텍스트 복사</button></div>
+<label for="articleEditor">본문과 사진이 함께 들어간 편집 영역</label>
+<div id="articleEditor" class="articleEditor" contenteditable="true" spellcheck="false" aria-label="본문과 사진 편집 영역"></div>
+<div class="actions">
+<button id="copyHtml" class="secondary">글 전체 복사</button>
+<button id="copyText" class="secondary">텍스트 복사</button>
+<button id="toTistory">티스토리 글쓰기 열기</button>
 </div>
-<div class="card">
-<h2>상품페이지 대표 이미지</h2>
-<div id="images" class="imageGrid"></div>
-</div>
-<div class="card">
-<h2>최종 글 미리보기</h2>
-<div id="articlePreview" class="articlePreview"></div>
-<div class="actions"><button id="toTistory">티스토리 글쓰기 열고 글 옮기기</button></div>
-<p class="muted">버튼을 누르면 글 전체를 서식과 사진을 포함한 HTML로 복사하고 티스토리를 엽니다. 티스토리 본문에 붙여넣고 제목 칸을 확인한 뒤 게시하세요. 다른 사이트의 편집창에 자동으로 입력하는 기능은 브라우저 보안상 제한됩니다.</p>
+<p class="muted">본문과 사진은 위 한 칸에서 함께 수정할 수 있어. 티스토리 주소는 처음 한 번만 입력하면 저장돼. 글쓰기 화면이 열리면 본문에 붙여넣고 게시해 줘.</p>
 </div>
 </div>
 </main></body></html>
