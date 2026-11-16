@@ -133,8 +133,8 @@ $("copyHtml").onclick=async()=>{
  catch(e){msg("복사에 실패했어. 브라우저의 클립보드 권한을 확인해 줘.");}
 };
 $("copyText").onclick=async()=>{
- if(!resultData||!articleText().trim()){msg("먼저 글을 생성해 줘.");return;}
- try{await navigator.clipboard.writeText($("title").value+"\n\n"+articleText());msg("제목과 본문 텍스트를 복사했어.");}
+ if(!$("title").value.trim()){msg("복사할 제목이 없어.");return;}
+ try{await navigator.clipboard.writeText($("title").value);msg("제목을 복사했어.");}
  catch(e){msg("복사를 지원하지 않는 브라우저야.");}
 };
 $("toTistory").onclick=async()=>{
