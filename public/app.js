@@ -73,16 +73,12 @@ function renderArticle(){
 }
 function articleText(){return $("articleEditor").innerText||$("articleEditor").textContent||"";}
 function articleHtml(){return $("articleEditor").innerHTML;}
+function tistoryHtml(){
+ return '<div class="product-article">'+articleHtml()+"</div>";
+}
 async function copyRichHtml(){
- const html="<article>"+articleHtml()+"</article>";
- const plain=articleText();
- if(navigator.clipboard&&window.ClipboardItem){
-  const item=new ClipboardItem({
-   "text/html":new Blob([html],{type:"text/html"}),
-   "text/plain":new Blob([plain],{type:"text/plain"})
-  });
-  await navigator.clipboard.write([item]);
- }else await navigator.clipboard.writeText(plain);
+ // Copy literal HTML source: mobile clipboard can drop the text/html clipboard format.
+ await navigator.clipboard.writeText(tistoryHtml());
 }
 function getTistoryPostUrl(){
  let base="";
@@ -122,7 +118,7 @@ $("generate").onclick=async()=>{
  msg("상품 정보와 대표 이미지를 이용해 글을 작성 중...");
  try{
   resultData=await api("/api/generate",{method:"POST",body:JSON.stringify({url:productInfo.url})});
-  foundImages=(productInfo.images||[]).slice(0,8);
+  foundImages=(productInfo.images||[]).slice(0,8).map(url=>new URL(url,location.origin).toString());
   $("title").value=resultData.title||"";
   renderArticle();
   $("result").classList.remove("hidden");
@@ -133,7 +129,7 @@ $("generate").onclick=async()=>{
 };
 $("copyHtml").onclick=async()=>{
  if(!resultData||!articleText().trim()){msg("먼저 글을 생성해 줘.");return;}
- try{await copyRichHtml();msg("제목과 본문, 사진을 한 번에 복사했어.");}
+ try{await copyRichHtml();msg("사진 주소가 포함된 HTML 코드를 복사했어. 티스토리 편집기에서 HTML 모드로 전환한 뒤 붙여넣어 줘.");}
  catch(e){msg("복사에 실패했어. 브라우저의 클립보드 권한을 확인해 줘.");}
 };
 $("copyText").onclick=async()=>{
@@ -149,8 +145,8 @@ $("toTistory").onclick=async()=>{
  const tab=window.open(target,"_blank");
  try{
   await copyRichHtml();
-  if(tab)msg("내 블로그의 글쓰기 화면을 열고 본문과 사진을 복사했어. 티스토리 제목 칸에는 위 제목을 입력하고 본문에 붙여넣은 뒤 게시해 줘.");
-  else msg("글은 복사했어. 팝업이 차단됐으니 저장된 내 블로그 주소의 /manage/newpost/ 화면을 열고 붙여넣어 줘.");
+  if(tab)msg("HTML 코드를 복사했어. 티스토리에서 기본모드를 HTML로 바꾸고 붙여넣은 다음, 기본모드로 돌아오면 사진이 보여. 제목 칸은 위 제목을 입력해 줘.");
+  else msg("HTML 코드는 복사했어. 저장된 내 블로그 주소의 /manage/newpost/ 화면을 직접 열고 HTML 모드에 붙여넣어 줘.");
  }catch(e){msg("티스토리 글쓰기 화면은 열었지만 자동 복사에 실패했어. 글 전체 복사 버튼을 눌러서 붙여넣어 줘.");}
 };
 api("/api/status").then(d=>$("status").textContent=d.aiConfigured?"AI 연결됨":"API 키 설정 필요").catch(()=>$("status").textContent="연결 오류");
