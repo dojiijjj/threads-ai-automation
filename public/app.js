@@ -18,62 +18,39 @@ function renderKeywords(items){
 }
 function renderImages(){
  const box=$("images");box.replaceChildren();
- if(!foundImages.length){box.textContent="사용 조건이 확인된 관련 이미지를 찾지 못했습니다.";return;}
+ if(!foundImages.length){box.textContent="사용 가능한 공개 이미지가 없습니다.";return;}
  foundImages.forEach((im,i)=>{
   const card=document.createElement("div");card.className="imageCard";
   const img=document.createElement("img");img.src=im.thumbUrl;img.alt=(resultData.imageAlts||[])[i]||im.title;img.loading="lazy";card.appendChild(img);
   const meta=document.createElement("div");meta.className="meta";
   const name=document.createElement("div");name.className="name";name.textContent=(i+1)+". "+(im.title||"관련 이미지");meta.appendChild(name);
-  const detail=document.createElement("div");detail.className="detail";
-  if(im.kind==="product"){
-   detail.textContent="상품 상세페이지에서 수집한 대표 이미지\\n이미지 이용 조건은 판매처 정책을 확인해 주세요.";
-  }else{
-   detail.textContent="작가: "+(im.artist||"정보 없음")+"\\n라이선스: "+(im.license||"정보 없음");
-  }
-  meta.appendChild(detail);
-  const link=document.createElement("a");link.href=im.sourceUrl;link.target="_blank";link.rel="noopener noreferrer";link.textContent=im.kind==="product"?"상품 원본 페이지":"원본·라이선스 확인";meta.appendChild(link);
   card.appendChild(meta);box.appendChild(card);
  });
 }
-function addMissingMarkers(body,count){
- let parts=String(body||"").trim().split(/\n\s*\n/).filter(Boolean);
- for(let i=1;i<=count;i++){
-  const marker="[[IMAGE_"+i+"]]";
-  if(parts.some(p=>p.trim()===marker))continue;
-  const position=Math.min(parts.length,Math.max(1,Math.round(i*parts.length/(count+1))));
-  parts.splice(position,0,marker);
- }
- return parts.join("\n\n");
-}
 function imageFigure(im,i){
  const alt=(resultData.imageAlts||[])[i]||im.title||"관련 이미지";
- const caption=(resultData.imageCaptions||[])[i]||alt;
- const source=im.sourceUrl||"https://commons.wikimedia.org/";
- let attribution="";
- if(im.kind==="product"){
-  attribution="상품 이미지 출처: <a href=\""+escapeHtml(source)+"\">상품 상세페이지</a> · 판매처의 이미지 이용 조건을 확인해 주세요.";
- }else{
-  const licenseLink=im.licenseUrl?" · <a href=\""+escapeHtml(im.licenseUrl)+"\">라이선스</a>":"";
-  attribution="사진: "+escapeHtml(im.artist||"저작자 정보 없음")+" · "+escapeHtml(im.license||"라이선스 정보 확인")+" · <a href=\""+escapeHtml(source)+"\">원본 출처</a>"+licenseLink;
- }
- return "<figure><a href=\""+escapeHtml(source)+"\"><img src=\""+escapeHtml(im.originalUrl||im.thumbUrl)+"\" alt=\""+escapeHtml(alt)+"\" loading=\"lazy\" style=\"width:100%;height:auto;display:block\"></a><figcaption>"+escapeHtml(caption)+"<br>"+attribution+"</figcaption></figure>";
+ return "<figure><img src=\""+escapeHtml(im.originalUrl||im.thumbUrl)+"\" alt=\""+escapeHtml(alt)+"\" loading=\"lazy\" style=\"width:100%;height:auto;display:block\"></figure>";
+}
+function isPlainHeading(value){
+ const text=String(value||"").trim();
+ return text.length>2&&text.length<=48&&!/[.!?。！？]$/.test(text)&&!/^https?:\/\//i.test(text)&&!/^사진/.test(text);
 }
 function bodyHtml(){
  if(!resultData)return "";
- const content=addMissingMarkers($("body").value,foundImages.length);
- const chunks=content.split(/(\[\[IMAGE_[1-5]\]\])/g);
- let html="";
- chunks.forEach(chunk=>{
-  const m=chunk.match(/^\[\[IMAGE_([1-5])\]\]$/);
-  if(m){const index=Number(m[1])-1;if(foundImages[index])html+=imageFigure(foundImages[index],index);return;}
-  const text=chunk.trim();if(!text)return;
-  text.split(/\n\s*\n/).forEach(block=>{
-   const b=block.trim();if(!b)return;
-   const heading=b.match(/^#{1,3}\s+(.+)$/);
-   if(heading)html+="<h2>"+escapeHtml(heading[1])+"</h2>";
-   else html+="<p>"+escapeHtml(b).replace(/\n/g,"<br>")+"</p>";
-  });
+ const blocks=String($("body").value||"").trim().split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean);
+ let html="<h1>"+escapeHtml($("title").value)+"</h1>";
+ let photoIndex=0;
+ blocks.forEach((block,index)=>{
+  const safe=escapeHtml(block).replace(/\n/g,"<br>");
+  if(!block.includes("\n")&&isPlainHeading(block))html+="<h2>"+safe+"</h2>";
+  else html+="<p>"+safe+"</p>";
+  const target=Math.max(1,Math.round(blocks.length*(photoIndex+1)/(foundImages.length+1)));
+  if(photoIndex<foundImages.length&&index+1>=target){
+   html+=imageFigure(foundImages[photoIndex],photoIndex);
+   photoIndex++;
+  }
  });
+ while(photoIndex<foundImages.length){html+=imageFigure(foundImages[photoIndex],photoIndex);photoIndex++;}
  return html;
 }
 function renderPreview(){
