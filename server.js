@@ -6,11 +6,12 @@ const app=express();
 app.use(express.json({limit:"14mb"}));
 app.use(express.static(path.join(__dirname,"public")));
 const PORT=process.env.PORT||3000;
-const MODELS=["gemini-3.8-flash","gemini-3.6-flash","gemini-3.5-flash-lite"];
+const MODELS=["gemini-3.8-flash","gemini-3.7-flash","gemini-3.6-flash","gemini-3.5-flash","gemini-3.5-flash-lite"];
 const productCache=new Map();
 const articleCache=new Map();
 const imageCache=new Map();
 const clean=(v,n=3000)=>String(v||"").trim().slice(0,n);
+const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 function urlOf(v){const m=String(v||"").match(/https?:\/\/[^\s<>"']+/i);if(!m)throw new Error("상품 URL을 입력해 주세요.");const u=new URL(m[0].replace(/[.,!?;:，。！？；：)\]}》〉」』】]+$/u,""));if(!["http:","https:"].includes(u.protocol)||u.username||u.password)throw new Error("올바른 상품 URL이 아닙니다.");return u.toString();}
 function privateIp(a){if(net.isIPv4(a)){const p=a.split(".").map(Number);return p[0]===0||p[0]===10||p[0]===127||(p[0]===169&&p[1]===254)||(p[0]===172&&p[1]>=16&&p[1]<=31)||(p[0]===192&&p[1]===168)||p[0]>=224;}if(net.isIPv6(a)){const x=a.toLowerCase();return x==="::"||x==="::1"||x.startsWith("fc")||x.startsWith("fd")||x.startsWith("fe8")||x.startsWith("fe9")||x.startsWith("fea")||x.startsWith("feb");}return true;}
 async function checkHost(u){const h=new URL(u).hostname.toLowerCase();if(h==="localhost"||h.endsWith(".local")||h.endsWith(".localhost"))throw new Error("내부 주소는 사용할 수 없습니다.");if(net.isIP(h)){if(privateIp(h))throw new Error("내부 네트워크 주소는 사용할 수 없습니다.");return;}const rows=await dns.lookup(h,{all:true});if(!rows.length||rows.some(x=>privateIp(x.address)))throw new Error("안전하지 않은 주소입니다.");}
@@ -328,10 +329,11 @@ app.post("/api/generate-article",async(req,res)=>{
   let lastError="응답 없음";
   try{
    for(const model of MODELS){
-    let timer;
-    try{
-     const controller=new AbortController();
-     timer=setTimeout(()=>controller.abort(),30000);
+    for(let attempt=0;attempt<2;attempt++){
+     let timer;
+     try{
+      const controller=new AbortController();
+      timer=setTimeout(()=>controller.abort(),55000);
      const thinkingLevel=model==="gemini-3.5-flash-lite"?"minimal":"low";
      const response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{
       method:"POST",
@@ -363,14 +365,21 @@ app.post("/api/generate-article",async(req,res)=>{
      const message=data.error?.message||("Gemini 오류 "+response.status);
      lastError=model+" / "+response.status+" / "+message;
      if([400,401,403].includes(response.status))return res.status(response.status).json({error:lastError});
-     if(![404,429,500,502,503,504].includes(response.status))return res.status(502).json({error:lastError});
-    }catch(e){
-     clearTimeout(timer);
-     if(e.name==="AbortError"){lastError=model+" 응답 시간 초과";continue;}
-     lastError=e.message||String(e);
+      if(![404,429,500,502,503,504].includes(response.status))return res.status(502).json({error:lastError});
+      if(attempt===0)await pause(1500);
+     }catch(e){
+      clearTimeout(timer);
+      if(e.name==="AbortError"){
+       lastError=model+" 응답 시간 초과";
+       if(attempt===0){await pause(1500);continue;}
+       break;
+      }
+      lastError=model+" / "+(e.message||String(e));
+      break;
+     }
     }
    }
-   return res.status(503).json({error:"기본 모델과 대체 모델이 모두 응답하지 않습니다. 잠시 후 다시 시도해 주세요. 마지막 오류: "+lastError});
+   return res.status(503).json({error:"Gemini 서버가 일시적으로 혼잡해 모든 모델에서 생성에 실패했습니다. 잠시 후 다시 시도해 주세요. 마지막 오류: "+lastError});
   }catch(e){return res.status(502).json({error:e.message||"글 생성 중 오류가 발생했습니다."});}
  }catch(e){return res.status(422).json({error:"기사 글 생성 중 오류가 발생했습니다: "+e.message});}
 });
@@ -479,11 +488,11 @@ app.post("/api/generate",async(req,res)=>{
   let lastError="응답 없음";
   try{
    for(const model of MODELS){
-    for(let attempt=0;attempt<1;attempt++){
+    for(let attempt=0;attempt<2;attempt++){
      let timer;
      try{
       const controller=new AbortController();
-      timer=setTimeout(()=>controller.abort(),30000);
+      timer=setTimeout(()=>controller.abort(),55000);
       const thinkingLevel=model==="gemini-3.5-flash-lite"?"minimal":"low";
       const response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.65,maxOutputTokens:5000,responseMimeType:"application/json",thinkingConfig:{thinkingLevel}}}),signal:controller.signal});
       const data=await response.json().catch(()=>({}));
@@ -510,8 +519,17 @@ app.post("/api/generate",async(req,res)=>{
       const message=data.error?.message||("Gemini 오류 "+response.status);lastError=model+" / "+response.status+" / "+message;
       if([400,401,403].includes(response.status))return res.status(response.status).json({error:lastError});
       if(![404,429,500,502,503,504].includes(response.status))return res.status(502).json({error:lastError});
-      if(attempt===0)await new Promise(resolve=>setTimeout(resolve,1200));else break;
-     }catch(e){clearTimeout(timer);if(e.name==="AbortError"){lastError=model+" 응답 시간 초과";break;}lastError=e.message||String(e);break;}
+      if(attempt===0)await pause(1500);
+     }catch(e){
+      clearTimeout(timer);
+      if(e.name==="AbortError"){
+       lastError=model+" 응답 시간 초과";
+       if(attempt===0){await pause(1500);continue;}
+       break;
+      }
+      lastError=model+" / "+(e.message||String(e));
+      break;
+     }
     }
    }
    return res.status(503).json({error:"기본 모델과 대체 모델이 모두 응답하지 않습니다. 잠시 후 다시 시도해 주세요. 마지막 오류: "+lastError});
