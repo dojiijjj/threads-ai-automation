@@ -33,6 +33,30 @@ function isPlainHeading(value){
  const text=String(value||"").trim();
  return text.length>2&&text.length<=48&&!/[.!?。！？]$/.test(text)&&!/^https?:\/\//i.test(text);
 }
+function splitSentences(value){
+ const text=String(value||"").replace(/\s+/g," ").trim();
+ if(!text)return [];
+ const output=[];
+ let start=0;
+ const punctuation=/[.!?。！？]+[”’"'」』】)]*/gu;
+ let match;
+ while((match=punctuation.exec(text))){
+  const before=text.slice(start,match.index);
+  if(!/[가-힣]$/u.test(before))continue;
+  const marks=match[0].replace(/[”’"'」』】)]*$/u,"");
+  if(marks==="."&&/\d$/u.test(before))continue;
+  let next=punctuation.lastIndex;
+  while(next<text.length&&/\s/u.test(text[next]))next++;
+  if(next>=text.length)break;
+  if(!/[가-힣0-9“"'‘(]/u.test(text[next]))continue;
+  output.push(text.slice(start,punctuation.lastIndex).trim());
+  start=next;
+  punctuation.lastIndex=next;
+ }
+ const tail=text.slice(start).trim();
+ if(tail)output.push(tail);
+ return output.length?output:[text];
+}
 function makeImageFigure(url){
  const figure=document.createElement("figure");
  figure.className="articleImage";
@@ -63,11 +87,18 @@ function renderArticle(){
  const blocks=String(resultData.body||"").trim().split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean);
  const hashtagBlock=blocks.length&&blocks[blocks.length-1].startsWith("#")?blocks.pop():"";
  let photoIndex=0;
- blocks.forEach((block,index)=>{
-  const el=document.createElement(!block.includes("\n")&&isPlainHeading(block)?"h2":"p");
-  el.textContent=block;
+ const displayBlocks=[];
+ blocks.forEach(block=>{
+  const normalized=block.split(/\n+/).map(x=>x.trim()).filter(Boolean).join(" ");
+  if(!normalized)return;
+  if(isPlainHeading(normalized)){displayBlocks.push({text:normalized,heading:true});return;}
+  splitSentences(normalized).forEach(sentence=>displayBlocks.push({text:sentence,heading:false}));
+ });
+ displayBlocks.forEach((block,index)=>{
+  const el=document.createElement(block.heading?"h2":"p");
+  el.textContent=block.text;
   editor.appendChild(el);
-  const target=foundImages.length?Math.max(1,Math.round(blocks.length*(photoIndex+1)/(foundImages.length+1))):Infinity;
+  const target=foundImages.length?Math.max(1,Math.round(displayBlocks.length*(photoIndex+1)/(foundImages.length+1))):Infinity;
   if(photoIndex<foundImages.length&&index+1>=target){
    editor.appendChild(makeImageFigure(foundImages[photoIndex]));
    photoIndex++;
