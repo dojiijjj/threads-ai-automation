@@ -518,5 +518,5 @@ app.post("/api/generate",async(req,res)=>{
   }catch(e){return res.status(502).json({error:e.message||"글 생성 중 오류가 발생했습니다."});}
  }catch(e){return res.status(422).json({error:"상품 링크에서 정보를 가져오지 못했습니다: "+e.message});}
 });
-app.get("/api/status",(req,res)=>res.json({ok:true,aiConfigured:Boolean(process.env.GEMINI_API_KEY),models:MODELS,mode:"SEO 블로그 작성"}));
+app.get("/api/status",(req,res)=>res.set("Cache-Control","no-store, no-cache, must-revalidate, proxy-revalidate").set("Pragma","no-cache").set("Expires","0").json({ok:true,aiConfigured:Boolean(process.env.GEMINI_API_KEY),models:MODELS,mode:"SEO 블로그 작성"}));
 app.listen(PORT,()=>console.log("Blog writer listening on "+PORT));
