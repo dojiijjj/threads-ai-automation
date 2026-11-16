@@ -34,12 +34,10 @@ button:disabled{opacity:.5;cursor:wait}
 .infoGrid{display:grid;grid-template-columns:92px 1fr;gap:9px 12px;margin-top:12px;font-size:13px;line-height:1.55}
 .infoGrid .key{color:#a7a9b4}
 .infoGrid .value{color:#f1f1f4;overflow-wrap:anywhere}
-.productShots{display:flex;gap:9px;overflow-x:auto;margin-top:13px;padding-bottom:4px}
-.productShots img{width:104px;height:104px;object-fit:contain;background:#fff;border-radius:9px;flex:0 0 auto}
 .step{display:flex;gap:8px;align-items:center;font-size:12px;color:#aaa;margin-top:8px}
 .dot{width:7px;height:7px;border-radius:50%;background:#8192d8;flex:none}
 </style>
-<script src="/app.js?v=9" defer></script>
+<script src="/app.js?v=10" defer></script>
 </head>
 <body><main>
 <div class="top"><div class="brand">✍️ Google SEO 상품 블로그</div><div class="status" id="status">연결 확인 중</div></div>
@@ -55,7 +53,6 @@ button:disabled{opacity:.5;cursor:wait}
 <div id="productPanel" class="card hidden">
 <h2>2. 수집된 상품 정보</h2>
 <div id="productInfo" class="infoGrid"></div>
-<div id="productShots" class="productShots"></div>
 <p class="muted" id="productNotice"></p>
 <div class="actions"><button id="generate">이 상품으로 글과 사진 생성</button></div>
 </div>
