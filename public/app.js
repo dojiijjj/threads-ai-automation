@@ -231,11 +231,13 @@ $("generate").onclick=async()=>{
  }catch(e){msg("글 생성 실패: "+e.message);}
  finally{button.disabled=false;}
 };
-$("generateArticle").onclick=async()=>{
- if(!articleInfo){msg("먼저 기사 정보를 가져와 줘.");return;}
- const button=$("generateArticle");button.disabled=true;
- $("result").classList.add("hidden");resultData=null;foundImages=[];contentMode="article";currentShareUrl="";
- msg((contentMode==="instagram"?"인스타그램 게시물":"기사")+" 내용을 바탕으로 새 블로그 글을 작성 중...");
+
+async function generateFromSource(mode,buttonId){
+ if(!articleInfo){msg("먼저 정보를 가져와 줘.");return;}
+ const button=$(buttonId);button.disabled=true;
+ $("result").classList.add("hidden");resultData=null;foundImages=[];
+ contentMode=mode;currentShareUrl="";
+ msg((mode==="instagram"?"인스타그램 게시물":"기사")+" 내용을 바탕으로 새 블로그 글을 작성 중...");
  try{
   resultData=await api("/api/generate-article",{method:"POST",body:JSON.stringify({url:articleInfo.url})});
   foundImages=(articleInfo.images||[]).slice(0,20).map(url=>new URL(url,location.origin).toString());
@@ -243,9 +245,11 @@ $("generateArticle").onclick=async()=>{
   renderArticle();
   $("result").classList.remove("hidden");
   msg("완료. 게시물 내용과 사용 권한을 확인한 사진 "+foundImages.length+"장을 본문에 넣었어.");
- }catch(e){msg("기사 글 생성 실패: "+e.message);}
+ }catch(e){msg((mode==="instagram"?"인스타그램":"기사")+" 글 생성 실패: "+e.message);}
  finally{button.disabled=false;}
-};
+}
+$("generateArticle").onclick=()=>generateFromSource("article","generateArticle");
+$("generateInstagram").onclick=()=>generateFromSource("instagram","generateInstagram");
 
 $("copyHtml").onclick=async()=>{
  if(!resultData||!articleText().trim()){msg("먼저 글을 생성해 줘.");return;}
