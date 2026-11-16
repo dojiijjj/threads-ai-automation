@@ -1,7 +1,7 @@
 (()=>{
 "use strict";
 const $=id=>document.getElementById(id);
-let productInfo=null,resultData=null,foundImages=[];
+let productInfo=null,resultData=null,foundImages=[],currentShareUrl="";
 function msg(t){$("message").textContent=t;}
 async function api(url,opt={}){
  const r=await fetch(url,{...opt,headers:{"Content-Type":"application/json",...(opt.headers||{})}});
@@ -43,14 +43,13 @@ function makeImageFigure(url){
  return figure;
 }
 const SHARE_DISCLOSURE="이 포스팅은 토스쇼핑 쉐어링크 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.";
-const SHARE_URL="https://toss.shopping/_m/rWUawNdn";
 function addShareDisclosure(editor){
  const p=document.createElement("p");
  p.className="affiliateDisclosure";
  p.append(document.createTextNode(SHARE_DISCLOSURE+" "));
  const link=document.createElement("a");
- link.href=SHARE_URL;
- link.textContent=SHARE_URL;
+ link.href=currentShareUrl;
+ link.textContent=currentShareUrl;
  link.target="_blank";
  link.rel="noopener noreferrer";
  p.appendChild(link);
@@ -115,11 +114,11 @@ $("fetchProduct").onclick=async()=>{
  if(!url){msg("상품 링크를 입력해 줘.");$("url").focus();return;}
  const button=$("fetchProduct");button.disabled=true;
  $("productPanel").classList.add("hidden");$("result").classList.add("hidden");
- productInfo=null;resultData=null;foundImages=[];
+ productInfo=null;resultData=null;foundImages=[];currentShareUrl="";
  msg("상품페이지에서 실제 대표 이미지를 확인하는 중...");
  try{
   const data=await api("/api/preview?url="+encodeURIComponent(url));
-  productInfo=data;renderProduct(data);
+  productInfo=data;currentShareUrl=data.url||url;renderProduct(data);
   msg("상품 정보를 가져왔어. 아래 버튼을 눌러 글을 생성해 줘.");
  }catch(e){msg("상품 정보 수집 실패: "+e.message);}
  finally{button.disabled=false;}
