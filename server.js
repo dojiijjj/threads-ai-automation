@@ -222,30 +222,40 @@ function isReusableArticleImageLicense(value){
  const text=licenseValue(value).toLowerCase();
  return /\bcc0\b|public[\s_-]*domain|creativecommons\.org\/publicdomain\/zero/i.test(text);
 }
-function collectLicensedArticleImageUrls(articleNode,scope,html,baseUrl){
+function collectLicensedArticleImageUrls(articleNode,scope,html,baseUrl,allowUserAuthorized=false){
  const urls=[];
  const articleLicense=articleNode?.license||meta(html,"license")||meta(html,"dcterms.rights")||meta(html,"rights")||"";
  const globalAllowed=isReusableArticleImageLicense(articleLicense);
  const add=(item)=>{
   const src=typeof item==="string"?item:(item&&typeof item==="object"?(item.url||item.contentUrl||item["@id"]||""):"");
   const ownLicense=item&&typeof item==="object"?(item.license||item.usageTerms||item.rights||item.copyrightNotice||""):"";
-  if(!src||(!globalAllowed&&!isReusableArticleImageLicense(ownLicense)))return;
+  if(!src||(!allowUserAuthorized&&!globalAllowed&&!isReusableArticleImageLicense(ownLicense)))return;
   try{
    const u=new URL(src,baseUrl);
    if(["http:","https:"].includes(u.protocol)&&!u.username&&!u.password)urls.push(u.toString());
   }catch(_){}
  };
  if(articleNode)add(articleNode.image);
- for(const tag of (scope.match(/<img\b[^>]*>/gi)||[])){
-  const attrs={};
-  tag.replace(/([\w:-]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/g,(_,k,z,d,s,v)=>(attrs[k.toLowerCase()]=d??s??v,z));
-  const rights=attrs["data-license"]||attrs["data-licence"]||attrs.license||attrs["data-rights"]||attrs["data-copyright"]||"";
-  const src=attrs["data-zoom-image"]||attrs["data-original"]||attrs["data-lazy-src"]||attrs["data-src"]||attrs.src;
-  add({url:src,license:rights});
+ if(allowUserAuthorized||globalAllowed){
+  add(meta(html,"og:image"));
+  add(meta(html,"og:image:secure_url"));
+  add(meta(html,"twitter:image"));
  }
+ const scanImages=fragment=>{
+  for(const tag of (fragment.match(/<img\b[^>]*>/gi)||[])){
+   const attrs={};
+   tag.replace(/([\w:-]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/g,(_,k,z,d,s,v)=>(attrs[k.toLowerCase()]=d??s??v,z));
+   const rights=attrs["data-license"]||attrs["data-licence"]||attrs.license||attrs["data-rights"]||attrs["data-copyright"]||"";
+   const srcset=String(attrs.srcset||attrs["data-srcset"]||"").split(",").map(x=>x.trim().split(/\s+/)[0]).filter(Boolean).pop();
+   const src=attrs["data-zoom-image"]||attrs["data-original"]||attrs["data-lazy-src"]||attrs["data-src"]||srcset||attrs.src;
+   add({url:src,license:rights});
+  }
+ };
+ scanImages(scope);
+ if(allowUserAuthorized&&urls.length===0&&scope!==html)scanImages(html);
  return [...new Set(urls)];
 }
-async function extractArticleInfo(html,baseUrl){
+async function extractArticleInfo(html,baseUrl,allowUserAuthorized=false){
  let articleNode=null;
  for(const match of html.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)){
   try{articleNode=findArticleNode(JSON.parse(match[1].trim()));if(articleNode)break;}catch(_){}
@@ -262,7 +272,7 @@ async function extractArticleInfo(html,baseUrl){
  const author=clean(typeof authorValue==="string"?authorValue:Array.isArray(authorValue)?authorValue.map(x=>x.name||"").filter(Boolean).join(", "):authorValue?.name||"",200);
  const publisher=clean(articleNode?.publisher?.name||new URL(baseUrl).hostname,160);
  const published=clean(articleNode?.datePublished||meta(html,"article:published_time")||meta(html,"date")||"",80);
- const licensedUrls=collectLicensedArticleImageUrls(articleNode,scope,html,baseUrl);
+ const licensedUrls=collectLicensedArticleImageUrls(articleNode,scope,html,baseUrl,allowUserAuthorized);
  const imageMarkup=licensedUrls.map(src=>'<img src="'+src.replace(/&/g,"&amp;").replace(/"/g,"&quot;")+'">').join("");
  const images=licensedUrls.length?await productImageList(imageMarkup,baseUrl,null,20,imageMarkup):[];
  return {url:baseUrl,title:title||"기사 요약",description,body,author,publisher,published,images};
@@ -271,7 +281,8 @@ app.get("/api/article-preview",async(req,res)=>{
  try{
   const url=urlOf(req.query.url);
   const html=await fetchPage(url);
-  const article=await extractArticleInfo(html,url);
+  const allowUserAuthorized=["1","true","yes"].includes(String(req.query.imagesAuthorized||"").toLowerCase());
+  const article=await extractArticleInfo(html,url,allowUserAuthorized);
   articleCache.set(url,{article,createdAt:Date.now()});
   for(const [id,item] of imageCache){if(Date.now()-item.createdAt>24*60*60*1000)imageCache.delete(id);}
   const images=article.images.map(source=>{
