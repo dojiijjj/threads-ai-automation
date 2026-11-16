@@ -3,6 +3,12 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#111318">
+<meta name="description" content="상품과 기사 링크로 SEO 블로그 글과 사진을 만드는 도구">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="블로그 자동작성">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
 <title>Google SEO 상품 블로그 자동작성</title>
 <style>
 *{box-sizing:border-box}
@@ -40,6 +46,11 @@ button:disabled{opacity:.5;cursor:wait}
 .checkLine input{width:18px;height:18px;margin:0;padding:0;accent-color:#e9eaff;flex:none}
 </style>
 <script src="/app.js?v=15" defer></script>
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
+}
+</script>
 </head>
 <body><main>
 <div class="top"><div class="brand">✍️ Google SEO 상품 블로그</div><div class="status" id="status">연결 확인 중</div></div>
