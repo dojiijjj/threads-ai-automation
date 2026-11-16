@@ -278,6 +278,126 @@ async function extractArticleInfo(html,baseUrl,allowUserAuthorized=false){
  const images=licensedUrls.length?await productImageList(imageMarkup,baseUrl,null,20,imageMarkup):[];
  return {url:baseUrl,title:title||"기사 요약",description,body,author,publisher,published,images};
 }
+
+const RANDOM_NEWS_SOURCES=[
+ {id:"google",name:"Google 뉴스",feed:"https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko"},
+ {id:"yonhap",name:"연합뉴스",feed:"https://www.yna.co.kr/rss/news.xml"},
+ {id:"daum",name:"다음뉴스",feed:"https://news.google.com/rss/search?q="+encodeURIComponent("site:news.daum.net when:7d")+"&hl=ko&gl=KR&ceid=KR:ko"},
+ {id:"kbs",name:"KBS 뉴스",feed:"https://news.google.com/rss/search?q="+encodeURIComponent("site:news.kbs.co.kr when:7d")+"&hl=ko&gl=KR&ceid=KR:ko"},
+ {id:"naver-society",name:"네이버 뉴스 사회",feed:"https://news.google.com/rss/search?q="+encodeURIComponent('site:news.naver.com 사회 when:7d')+"&hl=ko&gl=KR&ceid=KR:ko"},
+ {id:"ohmynews",name:"오마이뉴스",feed:"https://rss.ohmynews.com/rss/ohmynews.xml"},
+ {id:"jtbc",name:"JTBC",feed:"https://news.google.com/rss/search?q="+encodeURIComponent("site:news.jtbc.co.kr when:7d")+"&hl=ko&gl=KR&ceid=KR:ko"}
+];
+async function fetchNewsText(raw,depth=0){
+ if(depth>4)throw new Error("뉴스 목록 이동 주소가 너무 많습니다.");
+ const url=urlOf(raw);await checkHost(url);
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);
+ try{
+  const response=await fetch(url,{redirect:"manual",signal:controller.signal,headers:{"User-Agent":"Mozilla/5.0 (compatible; BlogContentAssistant/1.0)","Accept":"application/rss+xml,application/xml,text/xml,application/atom+xml,*/*;q=0.8"}});
+  if([301,302,303,307,308].includes(response.status)){
+   const loc=response.headers.get("location");
+   if(response.body)await response.body.cancel().catch(()=>{});
+   if(!loc)throw new Error("뉴스 목록 이동 주소를 확인할 수 없습니다.");
+   return fetchNewsText(new URL(loc,url).toString(),depth+1);
+  }
+  if(!response.ok)throw new Error("뉴스 목록을 불러오지 못했습니다. HTTP "+response.status);
+  const reader=response.body.getReader();let bytes=0,parts=[];
+  while(true){
+   const {done,value}=await reader.read();if(done)break;
+   bytes+=value.length;
+   if(bytes>1800000){await reader.cancel();break;}
+   parts.push(Buffer.from(value));
+  }
+  return Buffer.concat(parts).toString("utf8");
+ }catch(e){
+  if(e.name==="AbortError")throw new Error("뉴스 목록 응답 시간이 초과됐습니다.");
+  throw e;
+ }finally{clearTimeout(timer);}
+}
+function xmlValue(block,tag){
+ const re=new RegExp("<"+tag+"(?:\\\\s[^>]*)?>([\\\\s\\\\S]*?)</"+tag+"\\\\s*>","i");
+ const match=String(block||"").match(re);if(!match)return "";
+ return match[1].replace(/<!\\[CDATA\\[/g,"").replace(/\\]\\]>/g,"").replace(/&#x([\\da-f]{1,6});/gi,(_,n)=>String.fromCodePoint(parseInt(n,16))).replace(/&apos;/gi,"'").replace(/&quot;/gi,'"').replace(/&amp;/gi,"&").replace(/&lt;/gi,"<").replace(/&gt;/gi,">").trim();
+}
+function parseNewsFeed(xml){
+ const entries=[...String(xml||"").matchAll(/<(item|entry)\\b[^>]*>([\\s\\S]*?)<\\/\\1>/gi)];
+ const items=[];
+ for(const match of entries){
+  const block=match[2]||"";
+  let link=xmlValue(block,"link");
+  if(!link){
+   const tag=block.match(/<link\\b[^>]*href=["']([^"']+)["'][^>]*\\/?\\s*>/i);
+   if(tag)link=tag[1];
+  }
+  const title=xmlValue(block,"title");
+  if(!link||!/^https?:\\/\\//i.test(link)||!title)continue;
+  items.push({title:decode(title),url:link.trim()});
+ }
+ const seen=new Set();
+ return items.filter(item=>{if(seen.has(item.url))return false;seen.add(item.url);return true;});
+}
+function shuffleNewsItems(items){
+ const result=items.slice();
+ for(let i=result.length-1;i>0;i--){
+  const j=require("crypto").randomInt(i+1);
+  [result[i],result[j]]=[result[j],result[i]];
+ }
+ return result;
+}
+async function resolveNewsArticleUrl(raw,depth=0){
+ if(depth>5)throw new Error("기사 링크 이동이 너무 많습니다.");
+ const url=urlOf(raw);await checkHost(url);
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
+ try{
+  const response=await fetch(url,{redirect:"manual",signal:controller.signal,headers:{"User-Agent":"Mozilla/5.0","Accept":"text/html,application/xhtml+xml,*/*;q=0.8"}});
+  if([301,302,303,307,308].includes(response.status)){
+   const loc=response.headers.get("location");
+   if(response.body)await response.body.cancel().catch(()=>{});
+   if(!loc)throw new Error("기사 링크 이동 주소가 없습니다.");
+   return resolveNewsArticleUrl(new URL(loc,url).toString(),depth+1);
+  }
+  if(response.body)await response.body.cancel().catch(()=>{});
+  if(!response.ok)throw new Error("기사 페이지 응답 오류 HTTP "+response.status);
+  return response.url||url;
+ }catch(e){
+  if(e.name==="AbortError")throw new Error("기사 링크 확인 시간이 초과됐습니다.");
+  throw e;
+ }finally{clearTimeout(timer);}
+}
+app.get("/api/random-article",async(req,res)=>{
+ const selectedIndex=require("crypto").randomInt(RANDOM_NEWS_SOURCES.length);
+ const source=RANDOM_NEWS_SOURCES[selectedIndex];
+ try{
+  const xml=await fetchNewsText(source.feed);
+  const candidates=shuffleNewsItems(parseNewsFeed(xml)).slice(0,14);
+  if(!candidates.length)throw new Error("선택된 출처에서 가져올 수 있는 기사 목록이 없습니다.");
+  const allowUserAuthorized=["1","true","yes"].includes(String(req.query.imagesAuthorized||"").toLowerCase());
+  let lastError="본문 추출에 실패했습니다.";
+  for(const candidate of candidates){
+   try{
+    const articleUrl=await resolveNewsArticleUrl(candidate.url);
+    const html=await fetchPage(articleUrl);
+    const article=await extractArticleInfo(html,articleUrl,allowUserAuthorized);
+    if(!article.title)article.title=candidate.title;
+    if(!article.body||article.body.length<250)throw new Error("기사 본문이 충분하지 않습니다.");
+    if(!article.publisher)article.publisher=source.name;
+    articleCache.set(articleUrl,{article,createdAt:Date.now()});
+    for(const [id,item] of imageCache){if(Date.now()-item.createdAt>24*60*60*1000)imageCache.delete(id);}
+    const images=article.images.map(imageUrl=>{
+     const id=require("crypto").randomUUID();
+     imageCache.set(id,{source:imageUrl,referer:articleUrl,createdAt:Date.now()});
+     return "/media/"+id;
+    });
+    while(imageCache.size>500)imageCache.delete(imageCache.keys().next().value);
+    return res.json({ok:true,...article,url:articleUrl,images,sourceId:source.id,sourceName:source.name});
+   }catch(e){lastError=e.message||String(e);}
+  }
+  throw new Error("선택된 "+source.name+"에서 본문을 읽을 수 있는 기사를 찾지 못했습니다. 다른 출처로 바꾸지 않고 공정한 확률을 유지했어. 다시 눌러 줘. ("+lastError+")");
+ }catch(e){
+  res.status(422).json({error:e.message||"랜덤 기사를 가져오지 못했습니다.",sourceId:source.id,sourceName:source.name});
+ }
+});
+
 app.get("/api/article-preview",async(req,res)=>{
  try{
   const url=urlOf(req.query.url);
