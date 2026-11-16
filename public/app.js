@@ -18,7 +18,7 @@ function renderKeywords(items){
 }
 function renderImages(){
  const box=$("images");box.replaceChildren();
- if(!foundImages.length){box.textContent="사용 가능한 공개 이미지가 없습니다.";return;}
+ if(!foundImages.length){box.textContent="사용 조건이 확인된 공개 이미지를 찾지 못했습니다.";return;}
  foundImages.forEach((im,i)=>{
   const card=document.createElement("div");card.className="imageCard";
   const img=document.createElement("img");img.src=im.thumbUrl;img.alt=(resultData.imageAlts||[])[i]||im.title;img.loading="lazy";card.appendChild(img);
@@ -33,7 +33,7 @@ function imageFigure(im,i){
 }
 function isPlainHeading(value){
  const text=String(value||"").trim();
- return text.length>2&&text.length<=48&&!/[.!?。！？]$/.test(text)&&!/^https?:\/\//i.test(text)&&!/^사진/.test(text);
+ return text.length>2&&text.length<=48&&!/[.!?。！？]$/.test(text)&&!/^https?:\/\//i.test(text);
 }
 function bodyHtml(){
  if(!resultData)return "";
@@ -73,7 +73,6 @@ $("generate").onclick=async()=>{
   try{
    const photoResult=await api("/api/images",{method:"POST",body:JSON.stringify({
     queries:generated.imageQueries||[],
-    productImages:generated.product?.images||[],
     productUrl:generated.product?.url||url
    })});
    foundImages=photoResult.images||[];
@@ -102,7 +101,7 @@ $("copyHtml").onclick=async()=>{
 };
 $("copyText").onclick=async()=>{
  if(!resultData||!$("body").value.trim()){msg("먼저 상품 링크를 분석해 글을 생성해 주세요.");return;}
- const text=$("title").value+"\n\n"+$("body").value+"\n\n"+foundImages.map((im,i)=>"사진 "+(i+1)+": "+(im.sourceUrl||"")).join("\n");
+ const text=$("title").value+"\n\n"+$("body").value;
  try{await navigator.clipboard.writeText(text);msg("제목과 본문을 복사했습니다.");}
  catch(e){msg("복사를 지원하지 않는 브라우저입니다.");}
 };
