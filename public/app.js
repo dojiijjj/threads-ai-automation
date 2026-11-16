@@ -74,8 +74,8 @@ function renderArticle(){
 function articleText(){return $("articleEditor").innerText||$("articleEditor").textContent||"";}
 function articleHtml(){return $("articleEditor").innerHTML;}
 async function copyRichHtml(){
- const html="<article><h1>"+escapeHtml($("title").value)+"</h1>"+articleHtml()+"</article>";
- const plain=$("title").value+"\n\n"+articleText();
+ const html="<article>"+articleHtml()+"</article>";
+ const plain=articleText();
  if(navigator.clipboard&&window.ClipboardItem){
   const item=new ClipboardItem({
    "text/html":new Blob([html],{type:"text/html"}),
@@ -149,7 +149,7 @@ $("toTistory").onclick=async()=>{
  const tab=window.open(target,"_blank");
  try{
   await copyRichHtml();
-  if(tab)msg("내 블로그의 글쓰기 화면을 열고 제목, 본문, 사진을 복사했어. 티스토리 본문에 붙여넣고 게시해 줘.");
+  if(tab)msg("내 블로그의 글쓰기 화면을 열고 본문과 사진을 복사했어. 티스토리 제목 칸에는 위 제목을 입력하고 본문에 붙여넣은 뒤 게시해 줘.");
   else msg("글은 복사했어. 팝업이 차단됐으니 저장된 내 블로그 주소의 /manage/newpost/ 화면을 열고 붙여넣어 줘.");
  }catch(e){msg("티스토리 글쓰기 화면은 열었지만 자동 복사에 실패했어. 글 전체 복사 버튼을 눌러서 붙여넣어 줘.");}
 };
