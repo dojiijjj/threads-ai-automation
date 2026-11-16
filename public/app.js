@@ -32,8 +32,8 @@ function renderProduct(data){
   const img=document.createElement("img");img.src=url;img.alt=(data.title||"상품")+" 이미지 "+(i+1);img.loading="lazy";shots.appendChild(img);
  });
  $("productNotice").textContent=data.images?.length
-  ?"상품 페이지에서 대표 이미지 "+data.images.length+"개를 확인했어. 글 생성 단계에서는 관련 공개 이미지를 별도로 검색해."
-  :"페이지에서 대표 이미지를 찾지 못했어. 글 생성 단계에서 관련 사진을 별도로 검색할게.";
+  ?"상품 페이지에서 가져온 대표 이미지 "+data.images.length+"개만 글에 사용해."
+  :"상품 페이지에서 대표 이미지를 찾지 못했어. 별도 사진 검색은 하지 않아.";
  $("productPanel").classList.remove("hidden");
 }
 function renderKeywords(items){
@@ -127,29 +127,16 @@ $("generate").onclick=async()=>{
   (terms[0]||title)+" product detail"
  ].slice(0,5);
  try{
-  const generationPromise=api("/api/generate",{method:"POST",body:JSON.stringify({url:productInfo.url})});
-  const imagePromise=api("/api/images",{method:"POST",body:JSON.stringify({queries})}).catch(e=>({images:[],error:e.message}));
-  const [generated,photoResult]=await Promise.all([generationPromise,imagePromise]);
-  resultData=generated;foundImages=photoResult.images||[];
-  if(foundImages.length<5&&Array.isArray(generated.imageQueries)&&generated.imageQueries.length){
-   try{
-    const fallback=await api("/api/images",{method:"POST",body:JSON.stringify({queries:generated.imageQueries})});
-    const seen=new Set(foundImages.map(x=>x.id||x.originalUrl));
-    for(const image of (fallback.images||[])){
-     const key=image.id||image.originalUrl;
-     if(!seen.has(key)){seen.add(key);foundImages.push(image);}
-     if(foundImages.length>=5)break;
-    }
-   }catch(_){}
-  }
+  const generated=await api("/api/generate",{method:"POST",body:JSON.stringify({url:productInfo.url})});
+  resultData=generated;
+  foundImages=(productInfo.images||[]).map((url,i)=>({id:url,thumbUrl:url,originalUrl:url,title:(productInfo.title||"상품")+" 대표 이미지 "+(i+1)}));
   $("title").value=generated.title||"";
   $("body").value=generated.body||"";
   renderKeywords(generated.keywords||[]);
   $("result").classList.remove("hidden");
   renderImages();renderPreview();
   const count=(generated.body.match(/#[^\s#]+/g)||[]).length;
-  if(foundImages.length===5)msg("완료. 상품 소개 글과 사진 5장, 해시태그 "+count+"개를 준비했어.");
-  else msg("완료. 사진 "+foundImages.length+"장과 해시태그 "+count+"개를 준비했어.");
+  msg("완료. 상품페이지 대표 이미지 "+foundImages.length+"장만 사용했고 해시태그 "+count+"개를 준비했어.");
  }catch(e){msg("글 생성 실패: "+e.message);}
  finally{button.disabled=false;}
 };
