@@ -212,7 +212,40 @@ function articleTextFromHtml(fragment){
   .split("\n").map(line=>line.trim()).filter(line=>line.length>8).join("\n")
   .slice(0,12000).trim();
 }
-async function extractArticleInfo(html,baseUrl,useImages){
+function licenseValue(value){
+ if(typeof value==="string")return value;
+ if(Array.isArray(value))return value.map(licenseValue).join(" ");
+ if(value&&typeof value==="object")return [value.name,value.url,value["@id"],value.description,value.identifier].filter(Boolean).map(licenseValue).join(" ");
+ return "";
+}
+function isReusableArticleImageLicense(value){
+ const text=licenseValue(value).toLowerCase();
+ return /\bcc0\b|public[\s_-]*domain|creativecommons\.org\/publicdomain\/zero/i.test(text);
+}
+function collectLicensedArticleImageUrls(articleNode,scope,html){
+ const urls=[];
+ const articleLicense=articleNode?.license||meta(html,"license")||meta(html,"dcterms.rights")||meta(html,"rights")||"";
+ const globalAllowed=isReusableArticleImageLicense(articleLicense);
+ const add=(item)=>{
+  const src=typeof item==="string"?item:(item&&typeof item==="object"?(item.url||item.contentUrl||item["@id"]||""):"");
+  const ownLicense=item&&typeof item==="object"?(item.license||item.usageTerms||item.rights||item.copyrightNotice||""):"";
+  if(!src||(!globalAllowed&&!isReusableArticleImageLicense(ownLicense)))return;
+  try{
+   const u=new URL(src,articleNode?.url||"https://example.invalid");
+   if(["http:","https:"].includes(u.protocol)&&!u.username&&!u.password)urls.push(u.toString());
+  }catch(_){}
+ };
+ if(articleNode)add(articleNode.image);
+ for(const tag of (scope.match(/<img\b[^>]*>/gi)||[])){
+  const attrs={};
+  tag.replace(/([\w:-]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/g,(_,k,z,d,s,v)=>(attrs[k.toLowerCase()]=d??s??v,z));
+  const rights=attrs["data-license"]||attrs["data-licence"]||attrs.license||attrs["data-rights"]||attrs["data-copyright"]||"";
+  const src=attrs["data-zoom-image"]||attrs["data-original"]||attrs["data-lazy-src"]||attrs["data-src"]||attrs.src;
+  add({url:src,license:rights});
+ }
+ return [...new Set(urls)];
+}
+async function extractArticleInfo(html,baseUrl){
  let articleNode=null;
  for(const match of html.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)){
   try{articleNode=findArticleNode(JSON.parse(match[1].trim()));if(articleNode)break;}catch(_){}
@@ -229,14 +262,16 @@ async function extractArticleInfo(html,baseUrl,useImages){
  const author=clean(typeof authorValue==="string"?authorValue:Array.isArray(authorValue)?authorValue.map(x=>x.name||"").filter(Boolean).join(", "):authorValue?.name||"",200);
  const publisher=clean(articleNode?.publisher?.name||new URL(baseUrl).hostname,160);
  const published=clean(articleNode?.datePublished||meta(html,"article:published_time")||meta(html,"date")||"",80);
- const imageSource=useImages?await productImageList(html,baseUrl,articleNode,20,scope):[];
- return {url:baseUrl,title:title||"기사 요약",description,body,author,publisher,published,images:imageSource};
+ const licensedUrls=collectLicensedArticleImageUrls(articleNode,scope,html);
+ const imageMarkup=licensedUrls.map(src=>'<img src="'+src.replace(/&/g,"&amp;").replace(/"/g,"&quot;")+'">').join("");
+ const images=licensedUrls.length?await productImageList(imageMarkup,baseUrl,null,20,imageMarkup):[];
+ return {url:baseUrl,title:title||"기사 요약",description,body,author,publisher,published,images};
 }
 app.get("/api/article-preview",async(req,res)=>{
  try{
-  const url=urlOf(req.query.url),useImages=String(req.query.useImages||"")==="1";
+  const url=urlOf(req.query.url);
   const html=await fetchPage(url);
-  const article=await extractArticleInfo(html,url,useImages);
+  const article=await extractArticleInfo(html,url);
   articleCache.set(url,{article,createdAt:Date.now()});
   for(const [id,item] of imageCache){if(Date.now()-item.createdAt>24*60*60*1000)imageCache.delete(id);}
   const images=article.images.map(source=>{
@@ -272,6 +307,7 @@ app.post("/api/generate-article",async(req,res)=>{
    "구성: 사건이나 발표의 핵심 내용, 배경, 주요 사실, 관련 당사자와 영향, 독자가 알아야 할 점, 앞으로 확인할 쟁점을 자연스러운 순서로 설명합니다. 원문에 없는 사실이나 전망을 사실처럼 만들어내지 않습니다.",
    "분석: 기사에 명시된 사실과 작성자의 해석을 분명히 구분합니다. 해석이나 맥락이 필요하면 추론임을 분명히 밝히고, 근거가 없는 단정은 피합니다.",
    "문체: 자연스러운 한국어 존댓말. 짧고 읽기 쉬운 문단과 기호 없는 소제목을 사용합니다. 기계적인 반복 표현은 피합니다.",
+   "문단 구분은 반드시 명확하게 합니다. 한 문단은 2~3개의 문장으로 구성하고, 문단이 끝날 때마다 빈 줄을 두 줄 넣습니다. 한 문단에 4문장 이상 이어 쓰지 마세요. 소제목은 한 줄에 단독으로 쓰고, 소제목 위아래에도 빈 줄을 둡니다. 글 전체를 하나의 긴 문단으로 붙여 쓰지 마세요.",
    "사실성: 숫자, 날짜, 인명, 기관명, 발언, 장소는 원문에 있는 경우에만 사용합니다. 불명확한 정보는 확인되지 않았다고 씁니다. 원문에 없는 당사자의 발언이나 경험을 만들어내지 않습니다.",
    "문자 형식: 제목과 본문은 일반 텍스트만 사용합니다. 해시태그, 샵 기호, 별표, 밑줄, 백틱, 대괄호, 중괄호, 마크다운 문법, HTML 태그, 이모지, 장식용 구분선은 넣지 마세요. 번호 목록이나 불릿 목록 대신 문단과 소제목으로 작성합니다.",
    "사진: 사진 자리표시자, URL, 출처 문구를 본문에 직접 쓰지 마세요. 사진은 프로그램이 별도로 본문 문단 사이에 배치합니다.",
@@ -299,7 +335,7 @@ app.post("/api/generate-article",async(req,res)=>{
       const result=JSON.parse(raw);
       if(!result.title||!result.body)throw new Error("AI 결과에 제목 또는 본문이 없습니다.");
       result.title=cleanBlogText(result.title);
-      result.body=cleanBlogText(result.body);
+      result.body=formatBlogParagraphs(cleanBlogText(result.body));
       const arr=(v,n)=>Array.isArray(v)?v.map(x=>String(x||"").trim()).filter(Boolean).slice(0,n):[];
       result.keywords=arr(result.keywords,3).map(cleanBlogText);
       const makeTag=value=>cleanBlogText(value).replace(/\s+/g,"").replace(/[^\p{L}\p{N}]/gu,"");
@@ -362,6 +398,20 @@ app.post("/api/images",async(req,res)=>{
   res.json({images:images.slice(0,5),searched:queries});
  }catch(e){res.status(502).json({error:e.message||"관련 이미지를 찾지 못했습니다."});}
 });
+function formatBlogParagraphs(value){
+ const blocks=String(value||"").replace(/\r/g,"").split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean);
+ const output=[];
+ for(const block of blocks){
+  const lines=block.split("\n").map(x=>x.trim()).filter(Boolean);
+  const text=lines.join(" ");
+  const heading=text.length<=48&&!/[.!?。！？]$/.test(text)&&!text.startsWith("#");
+  if(heading){output.push(text);continue;}
+  const sentences=(text.match(/[^.!?。！？]+[.!?。！？]+|[^.!?。！？]+$/g)||[text]).map(x=>x.trim()).filter(Boolean);
+  if(sentences.length<=2){output.push(text);continue;}
+  for(let i=0;i<sentences.length;i+=2)output.push(sentences.slice(i,i+2).join(" "));
+ }
+ return output.join("\n\n").replace(/\n{3,}/g,"\n\n").trim();
+}
 function cleanBlogText(value){
  return String(value||"").replace(/\r/g,"")
   .replace(/^\s{0,3}#{1,6}\s*/gm,"")
@@ -403,6 +453,7 @@ app.post("/api/generate",async(req,res)=>{
   "제목: 메인 키워드를 최대한 앞쪽에 배치합니다. 검색자가 얻을 정보를 분명히 보여주고 자연스러운 관심을 유도합니다. 과장 표현은 금지합니다.",
   "도입부: 독자가 상품을 찾게 된 고민이나 상황을 짚어 공감대를 형성합니다. 첫 2~3문장에 메인 키워드를 자연스럽게 포함합니다.",
   "본문 구조: 기호 없이 짧고 명확한 소제목을 여러 개 배치합니다. 제품 개요, 핵심 특징, 각 특징이 실제로 의미하는 점, 적합한 사용자, 비슷한 제품을 비교할 때 확인할 기준, 구매 전 체크할 점 순으로 자연스럽게 전개합니다. 소제목 아래에는 구체적인 설명과 실용적인 정보를 담습니다.",
+  "단락 구분: 문단마다 2~3문장만 넣고 문단 사이에는 반드시 빈 줄을 넣습니다. 한 문단이 지나치게 길어지지 않도록 합니다. 소제목 앞뒤도 빈 줄로 구분합니다.",
   "활용 팁과 비교 분석: 단순한 특징 나열에 그치지 말고 독자가 선택할 때 확인할 조건, 사용 환경에 따른 차이, 구매 전에 비교할 항목을 구체적으로 제안합니다. 실제 확인되지 않은 경쟁 제품의 성능이나 수치와 비교하지 마세요.",
   "결론: 핵심 내용을 정확히 세 문장으로 정리한 뒤, 독자가 자신의 조건을 댓글이나 생각으로 나눌 수 있도록 자연스럽게 마무리합니다.",
   "문체: 친근하고 공감 가는 자연스러운 존댓말을 사용합니다. 전문가처럼 정확하되 딱딱하지 않게 씁니다. 어색한 문어체와 AI 특유의 정형화된 말투는 피합니다.",
