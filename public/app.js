@@ -192,6 +192,30 @@ $("fetchArticle").onclick=async()=>{
  }catch(e){msg("기사 정보 수집 실패: "+e.message);}
  finally{button.disabled=false;}
 };
+
+$("randomArticle").onclick=async()=>{
+ const button=$("randomArticle");button.disabled=true;
+ $("productPanel").classList.add("hidden");$("articlePanel").classList.add("hidden");$("result").classList.add("hidden");
+ productInfo=null;articleInfo=null;resultData=null;foundImages=[];currentShareUrl="";contentMode="article";
+ msg("7개 뉴스 출처 중 하나를 같은 확률로 선택하고 기사를 가져오는 중...");
+ try{
+  const imagesAuthorized=$("articleImagesAuthorized").checked;
+  const data=await api("/api/random-article?imagesAuthorized="+(imagesAuthorized?"1":"0"));
+  articleInfo=data;
+  $("articleUrl").value=data.url||"";
+  const box=$("articleInfo");box.replaceChildren();
+  addInfoRow(box,"랜덤 출처",data.sourceName);
+  addInfoRow(box,"기사 제목",data.title);
+  addInfoRow(box,"언론사",data.publisher);
+  addInfoRow(box,"기자",data.author);
+  addInfoRow(box,"게시일",data.published);
+  addInfoRow(box,"기사 사진",(data.images||[]).length+"장");
+  $("articlePanel").classList.remove("hidden");
+  msg(data.sourceName+"에서 기사를 무작위로 골라 본문을 추출했어. 아래 버튼을 눌러 블로그 글을 생성해 줘.");
+ }catch(e){msg("랜덤 기사 추출 실패: "+e.message);}
+ finally{button.disabled=false;}
+};
+
 $("generate").onclick=async()=>{
  if(!productInfo){msg("먼저 상품 정보를 가져와 줘.");return;}
  const button=$("generate");button.disabled=true;
