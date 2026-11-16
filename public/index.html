@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="블로그 자동작성">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
-<title>Google SEO 상품 블로그 자동작성</title>
+<title>Google SEO 블로그 자동작성</title>
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:#101116;color:#f5f5f7;font-family:system-ui,-apple-system,sans-serif}
@@ -54,7 +54,7 @@ button:disabled{opacity:.5;cursor:wait}
 @media(max-width:520px){.tossDesktopViewport{height:620px}.embedFrame{height:620px}}
 
 </style>
-<script src="/app.js?v=20" defer></script>
+<script src="/app.js?v=21" defer></script>
 <script>
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
@@ -72,7 +72,7 @@ if ("serviceWorker" in navigator) {
 <input id="articleUrl" type="url" placeholder="기사 URL 붙여넣기">
 <label class="checkLine"><input id="articleImagesAuthorized" type="checkbox"><span>기사 사진 사용 권한 있음</span></label>
 <div class="actions"><button id="fetchArticle">기사 정보 가져오기</button></div>
-<div id="message" role="status"></div>
+<h2 style="margin-top:22px">인스타그램 게시물 링크 입력</h2>\n<input id="instagramUrl" type="url" placeholder="인스타그램 게시물 또는 릴스 URL 붙여넣기">\n<label class="checkLine"><input id="instagramImagesAuthorized" type="checkbox"><span>게시물 사진 사용 권한 있음</span></label>\n<div class="actions"><button id="fetchInstagram">인스타그램 정보 가져오기</button></div>\n<div id="message" role="status"></div>
 </div>
 
 <section class="card embedCard">
@@ -92,7 +92,7 @@ if ("serviceWorker" in navigator) {
 <div class="actions"><button id="generateArticle">이 기사로 글과 사진 생성</button></div>
 </div>
 
-<div id="result" class="hidden">
+<div id="instagramPanel" class="card hidden"><h2>인스타그램 게시물 정보</h2><div id="instagramInfo" class="infoGrid"></div><div class="actions"><button id="generateArticle">이 게시물로 글과 사진 생성</button></div></div>\n\n<div id="result" class="hidden">
 <div class="card">
 <h2>3. 완성된 글</h2>
 <label for="title">제목</label>
