@@ -45,12 +45,13 @@ button:disabled{opacity:.5;cursor:wait}
 .checkLine{display:flex;align-items:center;gap:9px;margin:12px 0 4px;color:#b5b6c0;font-size:13px}
 .checkLine input{width:18px;height:18px;margin:0;padding:0;accent-color:#e9eaff;flex:none}
 .embedCard h2{margin-bottom:12px}
-.embedFrame{display:block;width:100%;height:620px;border:1px solid #41434f;border-radius:12px;background:#fff}
+.embedFrame{display:block;width:1200px;min-width:1200px;height:680px;border:0;background:#fff}
+.tossDesktopViewport{width:100%;height:680px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;border:1px solid #41434f;border-radius:12px;background:#fff}
 .embedFallback{display:flex;justify-content:flex-end;margin-top:10px;font-size:13px}
 .embedFallback a{color:#c7d2fe;text-decoration:none}
 .embedOpen{display:block;text-align:center;text-decoration:none;background:#e9eaff;color:#171823;font-weight:800;font-size:14px;border-radius:11px;padding:13px 14px;margin:0 0 10px}
 .embedNotice{font-size:12px;line-height:1.6;color:#b5b6c0;margin:0 0 10px}
-@media(max-width:520px){.embedFrame{height:560px}}
+@media(max-width:520px){.tossDesktopViewport{height:620px}.embedFrame{height:620px}}
 
 </style>
 <script src="/app.js?v=15" defer></script>
@@ -76,7 +77,9 @@ if ("serviceWorker" in navigator) {
 
 <section class="card embedCard">
 <a class="embedOpen" href="https://share.google/vBkwNtSLNiz1RFadi" target="_blank" rel="noopener noreferrer">네이버 엔터 새창에서 열기</a>
-<iframe class="embedFrame" src="https://sharelink.toss.im/performance/dashboard" title="토스 쉐어링크 실적 대시보드" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+<div class="tossDesktopViewport">
+<iframe class="embedFrame" src="https://sharelink.toss.im/performance/dashboard" title="토스 쉐어링크 실적 대시보드 데스크톱 화면" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</div>
 </section>
 
 <div id="productPanel" class="card hidden">
