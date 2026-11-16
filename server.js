@@ -72,7 +72,7 @@ app.get("/api/preview",async(req,res)=>{
  }catch(e){res.status(422).json({error:e.message||"상품 정보를 읽지 못했습니다."});}
 });
 function stripMeta(value){return decode(String(value||"").replace(/<[^>]*>/g," ").replace(/&nbsp;/gi," ")).slice(0,350);}
-function licenseAllowed(value){const s=String(value||"").trim().toUpperCase();return s==="CC0"||s.includes("PUBLIC DOMAIN")||/^CC BY(?:-SA)?(?:\s|$)/.test(s);}
+function licenseAllowed(value){const s=String(value||"").trim().toUpperCase();return s==="CC0"||s.includes("PUBLIC DOMAIN");}
 async function searchCommons(query){
  const params=new URLSearchParams({action:"query",format:"json",formatversion:"2",generator:"search",gsrsearch:query,gsrnamespace:"6",gsrlimit:"18",prop:"imageinfo",iiprop:"url|extmetadata",iiurlwidth:"1100"});
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),14000);
@@ -94,28 +94,32 @@ async function searchCommons(query){
 }
 app.post("/api/images",async(req,res)=>{
  const queries=Array.isArray(req.body.queries)?req.body.queries.map(x=>clean(x,100)).filter(Boolean).slice(0,5):[];
- const productUrl=clean(req.body.productUrl,2000);
- const productImages=Array.isArray(req.body.productImages)?req.body.productImages.slice(0,3):[];
- if(!queries.length&&!productImages.length)return res.status(400).json({error:"이미지 검색어가 없습니다."});
+ if(!queries.length)return res.status(400).json({error:"이미지 검색어가 없습니다."});
  try{
-  const images=[],seen=new Set();
-  for(const p of productImages){
-   try{
-    const rawUrl=typeof p==="string"?p:p.url;
-    const u=new URL(rawUrl);
-    if(u.protocol!=="https:"||u.username||u.password||seen.has(u.href))continue;
-    seen.add(u.href);
-    images.push({id:"product-"+images.length,title:clean((typeof p==="object"&&p.title)||"상품 대표 이미지",180),thumbUrl:u.href,originalUrl:u.href,sourceUrl:productUrl||u.origin,artist:"상품 판매 페이지",license:"판매처 이미지 이용 조건 확인 필요",licenseUrl:"",description:"상품 페이지에서 가져온 대표 이미지",kind:"product"});
-   }catch(_){}
-  }
   const batches=await Promise.all(queries.map(q=>searchCommons(q).catch(e=>{console.warn("Commons search:",q,e.message);return [];})));
+  const seen=new Set(),images=[];
   for(let i=0;i<batches.length;i++)for(const item of batches[i]){
    const key=item.id||item.originalUrl;if(seen.has(key))continue;seen.add(key);
-   images.push({...item,query:queries[i],kind:"commons"});if(images.length>=5)break;
+   images.push({...item,query:queries[i],kind:"commons"});
+   if(images.length>=5)break;
   }
   res.json({images:images.slice(0,5),searched:queries});
  }catch(e){res.status(502).json({error:e.message||"관련 이미지를 찾지 못했습니다."});}
 });
+function cleanBlogText(value){
+ return String(value||"").replace(/\r/g,"")
+  .replace(/^\s{0,3}#{1,6}\s*/gm,"")
+  .replace(/^[ \t]*[-*+][ \t]+/gm,"")
+  .replace(/^[ \t]*>+[ \t]?/gm,"")
+  .replace(/\*\*(.*?)\*\*/g,"$1")
+  .replace(/__(.*?)__/g,"$1")
+  .replace(/\[([^\]]+)\]\([^)]+\)/g,"$1")
+  .replace(/[#*_~|{}<>]/g,"")
+  .replace(/\x60/g,"")
+  .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\uFE0F]/gu,"")
+  .replace(/\n{3,}/g,"\n\n")
+  .trim();
+}
 app.post("/api/generate",async(req,res)=>{
  if(!process.env.GEMINI_API_KEY)return res.status(503).json({error:"Railway 환경변수 GEMINI_API_KEY가 필요합니다."});
  let url="";
@@ -125,30 +129,32 @@ app.post("/api/generate",async(req,res)=>{
   const product=extractProductInfo(html,url);
   if(!product.title&&!product.description&&!product.pageText)return res.status(422).json({error:"상품 페이지에서 정보를 읽지 못했습니다. 주소가 실제 상품 상세페이지인지 확인해 주세요."});
   const prompt=[
-   "너는 Google 검색 SEO를 전문으로 하는 한국어 제품 블로그 작가다.",
-   "사용자가 제공한 상품 URL에서 실제로 읽어온 정보만 근거로 자연스럽고 신뢰도 높은 상품 소개 포스팅을 작성한다.",
-   "상품명: "+product.title,
-   "브랜드: "+product.brand,
-   "판매 페이지 설명: "+product.description,
-   "가격: "+[product.price,product.currency].filter(Boolean).join(" ")+" (페이지에 있을 때만)",
-   "판매 상태: "+product.availability,
-   "상품 코드: "+product.sku,
-   "구조화된 상품 특징: "+product.features.join("; "),
-   "페이지에서 추출한 추가 정보: "+product.pageText,
-   "원본 상품 URL: "+url,
-   "작성 원칙: 친절한 존댓말, 실제 사람이 읽기 좋은 흐름, 검색 의도에 맞는 충분한 정보, 과도한 광고 문구와 키워드 반복 금지.",
-   "기본 분량은 공백 포함 약 1600자(1300~1900자). 검색자가 이 제품을 이해하고 구매 전 확인할 사항까지 판단할 수 있게 써.",
-   "제목은 상품명과 가장 중요한 검색 키워드를 포함하되 과장하거나 클릭베이트로 쓰지 마.",
-   "핵심 키워드 3개를 추천하고 제목과 첫 문단, 적절한 소제목에 자연스럽게 녹여. 키워드 밀도를 위해 부자연스럽게 반복하지 마.",
-   "본문 구성: 자연스러운 도입, 제품 개요, 확인된 주요 특징과 사용 환경, 장점, 구매 전 확인할 점, 간결한 마무리. 필요한 만큼 소제목을 사용해.",
-   "실제 사용 경험이나 사용자가 제공한 후기가 없다. 직접 사용해봤다, 구매했다, 만족했다, 몇 주 써봤다, 가족이 좋아했다 등의 체험담을 절대 꾸며내지 마. 리뷰어처럼 친근하게 설명하되 객관적인 제품 소개/분석으로 작성해.",
-   "가격, 사양, 재료, 사이즈, 기능, 성능, 배송, 평점, 할인율, 효능 등은 페이지에서 확인한 내용만 써. 확인 안 된 정보는 만들어내지 말고, 필요하면 구매 전 상세페이지에서 확인하라고 안내해.",
-   "페이지 정보가 빈약하면 일반적인 장점을 사실처럼 단정하지 말고, 확인 가능한 정보와 구매 전 체크리스트 중심으로 작성해.",
-   "본문에 이미지 배치 위치를 [[IMAGE_1]]부터 [[IMAGE_5]]까지 각각 한 번씩 문단 사이에 단독 줄로 표시해.",
-   "상품 사진 1~2장은 상품 상세 페이지에서 추출한 이미지를 우선 사용한다. 나머지 관련 사진 검색어는 짧은 영어 검색어로 총 5개 제안해. 중복되지 않고 제품 카테고리 및 맥락에 맞는 장면을 찾아.",
-   "각 이미지에 대해 자연스러운 alt 텍스트, 캡션, 본문 내 권장 배치 위치를 제안해.",
-   "결과는 유효한 JSON 객체만 출력: keywords(문자열 3개 배열), title(문자열), body(문자열), imageQueries(영어 검색어 5개 배열), imageAlts(문자열 5개 배열), imageCaptions(문자열 5개 배열), imagePlacements(문자열 5개 배열). JSON 외 다른 설명, 마크다운 코드블록은 금지."
-  ].join("\n");
+  "역할: 당신은 10년 경력의 전문 블로거이자 검색엔진 최적화 컨설턴트입니다. 구글 검색 의도를 정확히 파악하고 독자의 체류 시간을 높이는 정보성 상품 포스팅을 작성합니다.",
+  "임무: 제공된 상품 상세페이지의 실제 정보를 분석하여 해당 상품을 검색하는 사람이 궁금해할 내용을 충분히 설명하는 한국어 블로그 글을 작성합니다.",
+  "상품명: "+product.title,
+  "브랜드: "+(product.brand||"상품 페이지에서 확인되지 않음"),
+  "페이지 설명: "+(product.description||"상세 설명이 제공되지 않음"),
+  "가격: "+([product.price,product.currency].filter(Boolean).join(" ")||"페이지에서 확인되지 않음"),
+  "판매 상태: "+(product.availability||"페이지에서 확인되지 않음"),
+  "제품 코드: "+(product.sku||"확인되지 않음"),
+  "확인된 주요 특징: "+(product.features.join("; ")||"구조화된 상세 특징 없음"),
+  "상품 페이지에서 추출한 추가 내용: "+product.pageText,
+  "원본 상품 URL: "+url,
+  "작성 분량: 공백 포함 약 4000자에서 5000자 사이. 제목은 분량에서 제외하고 본문만 기준으로 합니다. 상품의 특징, 사용 환경, 선택 기준, 구매 전 확인 사항을 실제 정보에 기반해 충분히 설명합니다.",
+  "핵심 키워드: 상품명과 제품 카테고리에서 검색 가능성이 높은 메인 키워드 1개와 서브 키워드 2개를 도출합니다. 메인 키워드는 제목 앞부분과 도입부 첫 2~3문장 안에 자연스럽게 배치하고 본문 전체에서 3~5회 사용합니다. 서브 키워드는 문맥에 맞게 사용합니다.",
+  "제목: 메인 키워드를 최대한 앞쪽에 배치합니다. 검색자가 얻을 정보를 분명히 보여주고 자연스러운 관심을 유도합니다. 과장 표현은 금지합니다.",
+  "도입부: 독자가 상품을 찾게 된 고민이나 상황을 짚어 공감대를 형성합니다. 첫 2~3문장에 메인 키워드를 자연스럽게 포함합니다.",
+  "본문 구조: 기호 없이 짧고 명확한 소제목을 여러 개 배치합니다. 제품 개요, 핵심 특징, 각 특징이 실제로 의미하는 점, 적합한 사용자, 비슷한 제품을 비교할 때 확인할 기준, 구매 전 체크할 점 순으로 자연스럽게 전개합니다. 소제목 아래에는 구체적인 설명과 실용적인 정보를 담습니다.",
+  "활용 팁과 비교 분석: 단순한 특징 나열에 그치지 말고 독자가 선택할 때 확인할 조건, 사용 환경에 따른 차이, 구매 전에 비교할 항목을 구체적으로 제안합니다. 실제 확인되지 않은 경쟁 제품의 성능이나 수치와 비교하지 마세요.",
+  "결론: 핵심 내용을 정확히 세 문장으로 정리한 뒤, 독자가 자신의 조건을 댓글이나 생각으로 나눌 수 있도록 자연스럽게 마무리합니다.",
+  "문체: 친근하고 공감 가는 자연스러운 존댓말을 사용합니다. 전문가처럼 정확하되 딱딱하지 않게 씁니다. 어색한 문어체와 AI 특유의 정형화된 말투는 피합니다.",
+  "금지 표현: '요약하자면', '또한', '그리고', '따라서'를 습관적으로 반복하지 않습니다. '~합니다만', '~할 수 있습니다' 같은 뻔한 문장 틀을 반복하지 않습니다. '~이다', '~한다' 문어체를 반복하지 않습니다.",
+  "사실성: 실제 사용 경험이 제공되지 않았습니다. 직접 구매했다, 사용해 봤다, 만족했다, 가족이 써 봤다는 경험담을 절대 꾸며내지 마세요. 확인되지 않은 가격, 할인, 사양, 기능, 효능, 소재, 구성, 배송, 재고, 평점, 인증, 내구성을 만들지 마세요. 정보가 부족한 항목은 확인되지 않았다고 말하거나 구매 전 상세페이지에서 확인할 항목으로 안내합니다.",
+  "문자 형식: 본문과 제목은 일반 텍스트만 사용합니다. 해시태그, 샵 기호, 별표, 밑줄, 백틱, 대괄호, 중괄호, 인용 블록, 마크다운 문법, HTML 태그, 이모지, 장식용 구분선, 특수 기호를 넣지 마세요. 번호 목록이나 불릿 목록 대신 자연스러운 문단과 소제목으로 작성합니다. 소제목은 기호 없이 문장만 단독 줄에 적습니다.",
+  "사진: 본문 중간에 사진 자리표시자나 출처, 저작자, 라이선스, URL을 쓰지 마세요. 사진 배치는 프로그램이 본문 문단 사이에 자동으로 넣습니다. 사진 캡션도 본문에 생성하지 마세요.",
+  "이미지 검색: 관련 사진을 자동으로 찾기 위한 서로 다른 영어 검색어 5개를 생성합니다. 제품 카테고리, 구조, 관련 사용 환경, 디테일을 보여주는 사진을 고릅니다. 사진 검색어는 상품과 직접 관련되게 구체적으로 작성합니다. 각 사진에 대한 대체 텍스트와 짧은 설명도 별도 JSON 필드로 작성합니다.",
+  "출력: 유효한 JSON 객체 하나만 출력합니다. 키는 keywords(메인 키워드 1개와 서브 키워드 2개, 문자열 배열 3개), title(문자열), body(문자열), imageQueries(영어 검색어 5개 배열), imageAlts(문자열 5개 배열), imageCaptions(문자열 5개 배열), imagePlacements(문자열 5개 배열)입니다. JSON 외 설명이나 마크다운 코드블록은 출력하지 않습니다."
+ ].join("\n");
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),90000);
   let lastError="응답 없음";
   try{
@@ -161,6 +167,8 @@ app.post("/api/generate",async(req,res)=>{
        const raw=data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("").trim()||"";
        const result=JSON.parse(raw);
        if(!result.title||!result.body)throw new Error("AI 결과에 제목 또는 본문이 없습니다.");
+      result.title=cleanBlogText(result.title);
+      result.body=cleanBlogText(result.body);
        const arr=(v,n)=>Array.isArray(v)?v.map(x=>String(x||"").trim()).filter(Boolean).slice(0,n):[];
        result.keywords=arr(result.keywords,3);result.imageQueries=arr(result.imageQueries,5);
        result.imageAlts=arr(result.imageAlts,5);result.imageCaptions=arr(result.imageCaptions,5);result.imagePlacements=arr(result.imagePlacements,5);
