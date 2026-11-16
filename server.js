@@ -300,8 +300,8 @@ function instagramUrlOf(value){
  const raw=String(value||"").trim();
  let u;
  try{u=new URL(raw);}catch(_){throw new Error("올바른 인스타그램 게시물 링크를 입력해 주세요.");}
- if(!["https:","http:"].includes(u.protocol)||!/(^|\\.)instagram\\.com$/i.test(u.hostname)||u.username||u.password)throw new Error("instagram.com 게시물 링크만 사용할 수 있습니다.");
- if(!/\\/(p|reel|reels|tv)\\/[A-Za-z0-9_-]+/i.test(u.pathname))throw new Error("사진 게시물 또는 릴스 링크를 입력해 주세요.");
+ if(!["https:","http:"].includes(u.protocol)||!/(^|\.)instagram\.com$/i.test(u.hostname)||u.username||u.password)throw new Error("instagram.com 게시물 링크만 사용할 수 있습니다.");
+ if(!/\/(p|reel|reels|tv)\/[A-Za-z0-9_-]+/i.test(u.pathname))throw new Error("사진 게시물 또는 릴스 링크를 입력해 주세요.");
  u.search="";u.hash="";return u.toString();
 }
 async function extractInstagramInfo(html,baseUrl,allowImages=false){
@@ -309,7 +309,7 @@ async function extractInstagramInfo(html,baseUrl,allowImages=false){
  const description=meta(html,"og:description")||meta(html,"description")||"";
  const scope=articleScope(html);
  let caption=description;
- const patterns=[/"caption"\\s*:\\s*\\{[^}]*?"text"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"/gs,/"caption"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"/gs,/"text"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"/gs];
+ const patterns=[/"caption"\s*:\s*\{[^}]*?"text"\s*:\s*"((?:\\.|[^"\\])*)"/gs,/"caption"\s*:\s*"((?:\\.|[^"\\])*)"/gs,/"text"\s*:\s*"((?:\\.|[^"\\])*)"/gs];
  for(const pattern of patterns){const match=pattern.exec(html);if(match&&match[1]){try{const value=JSON.parse('"'+match[1]+'"');if(value.length>caption.length)caption=value;}catch(_){}}}
  caption=decode(caption).slice(0,10000);
  const imageMarkup=allowImages?['og:image','og:image:secure_url','twitter:image'].map(k=>{const v=meta(html,k);return v?'<img src="'+v.replace(/&/g,"&amp;").replace(/"/g,"&quot;")+'">':"";}).join(""):"";
