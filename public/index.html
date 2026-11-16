@@ -37,7 +37,7 @@ button:disabled{opacity:.5;cursor:wait}
 .step{display:flex;gap:8px;align-items:center;font-size:12px;color:#aaa;margin-top:8px}
 .dot{width:7px;height:7px;border-radius:50%;background:#8192d8;flex:none}
 </style>
-<script src="/app.js?v=13" defer></script>
+<script src="/app.js?v=14" defer></script>
 </head>
 <body><main>
 <div class="top"><div class="brand">✍️ Google SEO 상품 블로그</div><div class="status" id="status">연결 확인 중</div></div>
@@ -48,10 +48,6 @@ button:disabled{opacity:.5;cursor:wait}
 <div class="actions"><button id="fetchProduct">상품 정보 가져오기</button></div>
 <h2 style="margin-top:22px">기사 링크 입력</h2>
 <input id="articleUrl" type="url" placeholder="기사 URL 붙여넣기">
-<label style="display:flex;align-items:center;gap:8px;color:#c9cad2">
-<input id="articleImageRights" type="checkbox" style="width:18px;height:18px;margin:0">
-기사 사진 사용 권한 있음
-</label>
 <div class="actions"><button id="fetchArticle">기사 정보 가져오기</button></div>
 <div id="message" role="status"></div>
 </div>
