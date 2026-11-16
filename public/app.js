@@ -141,7 +141,8 @@ $("fetchArticle").onclick=async()=>{
  productInfo=null;articleInfo=null;resultData=null;foundImages=[];currentShareUrl="";contentMode="article";
  msg("기사 제목과 본문을 가져오는 중...");
  try{
-  const data=await api("/api/article-preview?url="+encodeURIComponent(url));
+  const imagesAuthorized=$("articleImagesAuthorized").checked;
+  const data=await api("/api/article-preview?url="+encodeURIComponent(url)+"&imagesAuthorized="+(imagesAuthorized?"1":"0"));
   articleInfo=data;
   const box=$("articleInfo");box.replaceChildren();
   addInfoRow(box,"기사 제목",data.title);
