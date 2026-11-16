@@ -62,7 +62,7 @@ function extractProductInfo(html,baseUrl){
   .replace(/<(script|style|svg|noscript|header|footer|nav|aside)\b[^>]*>[\s\S]*?<\/\1>/gi," ")
   .replace(/<(br|\/p|\/div|\/li|\/tr|\/h[1-6])\b[^>]*>/gi,"\n")
   .replace(/<[^>]+>/g," ")
- ).slice(0,9000);
+ ).slice(0,6000);
  const images=productImageList(html,baseUrl,productNode);
  return {url:baseUrl,title:name||title,description:clean(description,1800),brand,price,currency,availability,sku,features,images,pageText};
 }
@@ -144,7 +144,7 @@ app.post("/api/generate",async(req,res)=>{
   "확인된 주요 특징: "+(product.features.join("; ")||"구조화된 상세 특징 없음"),
   "상품 페이지에서 추출한 추가 내용: "+product.pageText,
   "원본 상품 URL: "+url,
-  "작성 분량: 공백 포함 약 4000자에서 5000자 사이. 제목은 분량에서 제외하고 본문만 기준으로 합니다. 상품의 특징, 사용 환경, 선택 기준, 구매 전 확인 사항을 실제 정보에 기반해 충분히 설명합니다.",
+  "작성 분량: 공백 포함 약 3000자에서 3800자 사이. 제목은 분량에서 제외하고 본문만 기준으로 합니다. 핵심 정보를 빠르게 전달하면서 상품의 특징, 사용 환경, 선택 기준, 구매 전 확인 사항을 실제 정보에 기반해 충분히 설명합니다.",
   "핵심 키워드: 상품명과 제품 카테고리에서 검색 가능성이 높은 메인 키워드 1개와 서브 키워드 2개를 도출합니다. 메인 키워드는 제목 앞부분과 도입부 첫 2~3문장 안에 자연스럽게 배치하고 본문 전체에서 3~5회 사용합니다. 서브 키워드는 문맥에 맞게 사용합니다.",
   "제목: 메인 키워드를 최대한 앞쪽에 배치합니다. 검색자가 얻을 정보를 분명히 보여주고 자연스러운 관심을 유도합니다. 과장 표현은 금지합니다.",
   "도입부: 독자가 상품을 찾게 된 고민이나 상황을 짚어 공감대를 형성합니다. 첫 2~3문장에 메인 키워드를 자연스럽게 포함합니다.",
@@ -159,14 +159,18 @@ app.post("/api/generate",async(req,res)=>{
   "해시태그: 상품명, 브랜드, 제품 종류, 구매 의도와 관련된 실제 검색어를 바탕으로 서로 겹치지 않는 해시태그 20개를 만듭니다. 너무 넓은 단어와 무관한 유행어는 제외합니다. 각 태그는 #을 포함하지 않은 단어 또는 짧은 구로 JSON 배열에 담습니다. 게시글 맨 마지막에 해시태그 20개를 한 줄로 붙입니다. 이 해시태그 줄 외에는 # 기호를 절대 사용하지 않습니다.",
   "출력: 유효한 JSON 객체 하나만 출력합니다. 키는 keywords(메인 키워드 1개와 서브 키워드 2개, 문자열 배열 3개), title(문자열), body(문자열), hashtags(문자열 20개 배열)입니다. JSON 외 설명이나 마크다운 코드블록은 출력하지 않습니다."
  ].join("\n");
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),90000);
   let lastError="응답 없음";
   try{
    for(const model of MODELS){
-    for(let attempt=0;attempt<2;attempt++){
+    for(let attempt=0;attempt<1;attempt++){
+     let timer;
      try{
-      const response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.65,maxOutputTokens:6500,responseMimeType:"application/json"}}),signal:controller.signal});
+      const controller=new AbortController();
+      timer=setTimeout(()=>controller.abort(),30000);
+      const thinkingLevel=model==="gemini-3.5-flash-lite"?"minimal":"low";
+      const response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.65,maxOutputTokens:5000,responseMimeType:"application/json",thinkingConfig:{thinkingLevel}}}),signal:controller.signal});
       const data=await response.json().catch(()=>({}));
+      clearTimeout(timer);timer=null;
       if(response.ok){
        const raw=data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("").trim()||"";
        const result=JSON.parse(raw);
@@ -190,12 +194,11 @@ app.post("/api/generate",async(req,res)=>{
       if([400,401,403].includes(response.status))return res.status(response.status).json({error:lastError});
       if(![404,429,500,502,503,504].includes(response.status))return res.status(502).json({error:lastError});
       if(attempt===0)await new Promise(resolve=>setTimeout(resolve,1200));else break;
-     }catch(e){if(e.name==="AbortError")throw e;lastError=e.message||String(e);if(attempt===0)await new Promise(resolve=>setTimeout(resolve,1000));else break;}
+     }catch(e){clearTimeout(timer);if(e.name==="AbortError"){lastError=model+" 응답 시간 초과";break;}lastError=e.message||String(e);break;}
     }
    }
    return res.status(503).json({error:"기본 모델과 대체 모델이 모두 응답하지 않습니다. 잠시 후 다시 시도해 주세요. 마지막 오류: "+lastError});
-  }catch(e){return res.status(502).json({error:e.name==="AbortError"?"글 생성 시간이 초과됐습니다. 다시 시도해 주세요.":e.message});}
-  finally{clearTimeout(timer);}
+  }catch(e){return res.status(502).json({error:e.message||"글 생성 중 오류가 발생했습니다."});}
  }catch(e){return res.status(422).json({error:"상품 링크에서 정보를 가져오지 못했습니다: "+e.message});}
 });
 app.get("/api/status",(req,res)=>res.json({ok:true,aiConfigured:Boolean(process.env.GEMINI_API_KEY),models:MODELS,mode:"SEO 블로그 작성"}));
