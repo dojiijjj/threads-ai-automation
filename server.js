@@ -7,6 +7,7 @@ app.use(express.json({limit:"14mb"}));
 app.use(express.static(path.join(__dirname,"public")));
 const PORT=process.env.PORT||3000;
 const MODELS=["gemini-3.8-flash","gemini-3.6-flash","gemini-3.5-flash-lite"];
+const productCache=new Map();
 const clean=(v,n=3000)=>String(v||"").trim().slice(0,n);
 function urlOf(v){const m=String(v||"").match(/https?:\/\/[^\s<>"']+/i);if(!m)throw new Error("상품 URL을 입력해 주세요.");const u=new URL(m[0].replace(/[.,!?;:，。！？；：)\]}》〉」』】]+$/u,""));if(!["http:","https:"].includes(u.protocol)||u.username||u.password)throw new Error("올바른 상품 URL이 아닙니다.");return u.toString();}
 function privateIp(a){if(net.isIPv4(a)){const p=a.split(".").map(Number);return p[0]===0||p[0]===10||p[0]===127||(p[0]===169&&p[1]===254)||(p[0]===172&&p[1]>=16&&p[1]<=31)||(p[0]===192&&p[1]===168)||p[0]>=224;}if(net.isIPv6(a)){const x=a.toLowerCase();return x==="::"||x==="::1"||x.startsWith("fc")||x.startsWith("fd")||x.startsWith("fe8")||x.startsWith("fe9")||x.startsWith("fea")||x.startsWith("feb");}return true;}
@@ -68,6 +69,7 @@ function extractProductInfo(html,baseUrl){
 app.get("/api/preview",async(req,res)=>{
  try{
   const url=urlOf(req.query.url),html=await fetchPage(url),product=extractProductInfo(html,url);
+  productCache.set(url,{product,createdAt:Date.now()});
   res.json({ok:true,...product,images:product.images.slice(0,5)});
  }catch(e){res.status(422).json({error:e.message||"상품 정보를 읽지 못했습니다."});}
 });
@@ -126,8 +128,9 @@ app.post("/api/generate",async(req,res)=>{
  let url="";
  try{url=urlOf(req.body.url);}catch(e){return res.status(400).json({error:e.message});}
  try{
-  const html=await fetchPage(url);
-  const product=extractProductInfo(html,url);
+  const cached=productCache.get(url);
+  if(!cached||Date.now()-cached.createdAt>30*60*1000)return res.status(409).json({error:"상품 정보가 만료됐습니다. 링크로 상품 정보를 먼저 불러와 주세요."});
+  const product=cached.product;
   if(!product.title&&!product.description&&!product.pageText)return res.status(422).json({error:"상품 페이지에서 정보를 읽지 못했습니다. 주소가 실제 상품 상세페이지인지 확인해 주세요."});
   const prompt=[
   "역할: 당신은 10년 경력의 전문 블로거이자 검색엔진 최적화 컨설턴트입니다. 구글 검색 의도를 정확히 파악하고 독자의 체류 시간을 높이는 정보성 상품 포스팅을 작성합니다.",
@@ -154,7 +157,8 @@ app.post("/api/generate",async(req,res)=>{
   "문자 형식: 본문과 제목은 일반 텍스트만 사용합니다. 해시태그, 샵 기호, 별표, 밑줄, 백틱, 대괄호, 중괄호, 인용 블록, 마크다운 문법, HTML 태그, 이모지, 장식용 구분선, 특수 기호를 넣지 마세요. 번호 목록이나 불릿 목록 대신 자연스러운 문단과 소제목으로 작성합니다. 소제목은 기호 없이 문장만 단독 줄에 적습니다.",
   "사진: 본문 중간에 사진 자리표시자나 출처, 저작자, 라이선스, URL을 쓰지 마세요. 사진 배치는 프로그램이 본문 문단 사이에 자동으로 넣습니다. 사진 캡션도 본문에 생성하지 마세요.",
   "이미지 검색: 관련 사진을 자동으로 찾기 위한 서로 다른 영어 검색어 5개를 생성합니다. 제품 카테고리, 구조, 관련 사용 환경, 디테일을 보여주는 사진을 고릅니다. 사진 검색어는 상품과 직접 관련되게 구체적으로 작성합니다. 각 사진에 대한 대체 텍스트와 짧은 설명도 별도 JSON 필드로 작성합니다.",
-  "출력: 유효한 JSON 객체 하나만 출력합니다. 키는 keywords(메인 키워드 1개와 서브 키워드 2개, 문자열 배열 3개), title(문자열), body(문자열), imageQueries(영어 검색어 5개 배열), imageAlts(문자열 5개 배열), imageCaptions(문자열 5개 배열), imagePlacements(문자열 5개 배열)입니다. JSON 외 설명이나 마크다운 코드블록은 출력하지 않습니다."
+  "해시태그: 상품명, 브랜드, 제품 종류, 구매 의도와 관련된 실제 검색어를 바탕으로 서로 겹치지 않는 해시태그 20개를 만듭니다. 너무 넓은 단어와 무관한 유행어는 제외합니다. 각 태그는 #을 포함하지 않은 단어 또는 짧은 구로 JSON 배열에 담습니다. 게시글 맨 마지막에 해시태그 20개를 한 줄로 붙입니다. 이 해시태그 줄 외에는 # 기호를 절대 사용하지 않습니다.",
+  "출력: 유효한 JSON 객체 하나만 출력합니다. 키는 keywords(메인 키워드 1개와 서브 키워드 2개, 문자열 배열 3개), title(문자열), body(문자열), hashtags(문자열 20개 배열), imageQueries(영어 검색어 5개 배열), imageAlts(문자열 5개 배열), imageCaptions(문자열 5개 배열), imagePlacements(문자열 5개 배열)입니다. JSON 외 설명이나 마크다운 코드블록은 출력하지 않습니다."
  ].join("\n");
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),90000);
   let lastError="응답 없음";
@@ -171,7 +175,16 @@ app.post("/api/generate",async(req,res)=>{
       result.title=cleanBlogText(result.title);
       result.body=cleanBlogText(result.body);
        const arr=(v,n)=>Array.isArray(v)?v.map(x=>String(x||"").trim()).filter(Boolean).slice(0,n):[];
-       result.keywords=arr(result.keywords,3).map(cleanBlogText);result.imageQueries=arr(result.imageQueries,5);
+       result.keywords=arr(result.keywords,3).map(cleanBlogText);
+       const makeTag=value=>cleanBlogText(value).replace(/\\s+/g,"").replace(/[^\\p{L}\\p{N}]/gu,"");
+       const tags=[],addTag=value=>{const t=makeTag(value);if(t&&!tags.includes(t)&&tags.length<20)tags.push(t);};
+       arr(result.hashtags,30).forEach(addTag);
+       [product.title,product.brand,product.title+"추천",product.title+"정보",product.title+"가격",product.title+"특징",product.title+"비교",product.title+"구매",product.title+"선택",product.title+"제품"].forEach(addTag);
+       ["제품정보","상품정보","구매가이드","제품비교","상품추천","제품특징","구매팁","제품선택","상품리뷰","제품분석"].forEach(addTag);
+       while(tags.length<20)addTag(product.title+"정보"+(tags.length+1));
+       result.hashtags=tags.slice(0,20);
+       result.body=result.body.replace(/\\s*#[^\\s#]+/g,"").trim()+"\\n\\n"+result.hashtags.map(t=>"#"+t).join(" ");
+       result.imageQueries=arr(result.imageQueries,5);
        result.imageAlts=arr(result.imageAlts,5);result.imageCaptions=arr(result.imageCaptions,5);result.imagePlacements=arr(result.imagePlacements,5);
        while(result.keywords.length<3)result.keywords.push(product.title);
        while(result.imageQueries.length<5)result.imageQueries.push(product.title+" product detail");
