@@ -64,6 +64,7 @@ function isPlainHeading(value){
 function bodyHtml(includeTitle=true){
  if(!resultData)return "";
  const blocks=String($("body").value||"").trim().split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean);
+ const hashtagBlock=blocks.length&&blocks[blocks.length-1].startsWith("#")?blocks.pop():"";
  let html=includeTitle?"<h1>"+escapeHtml($("title").value)+"</h1>":"";
  let photoIndex=0;
  blocks.forEach((block,index)=>{
@@ -77,6 +78,7 @@ function bodyHtml(includeTitle=true){
   }
  });
  while(photoIndex<foundImages.length){html+=imageFigure(foundImages[photoIndex],photoIndex);photoIndex++;}
+ if(hashtagBlock)html+="<p>"+escapeHtml(hashtagBlock)+"</p>";
  return html;
 }
 function renderPreview(){
@@ -129,6 +131,17 @@ $("generate").onclick=async()=>{
   const imagePromise=api("/api/images",{method:"POST",body:JSON.stringify({queries})}).catch(e=>({images:[],error:e.message}));
   const [generated,photoResult]=await Promise.all([generationPromise,imagePromise]);
   resultData=generated;foundImages=photoResult.images||[];
+  if(foundImages.length<5&&Array.isArray(generated.imageQueries)&&generated.imageQueries.length){
+   try{
+    const fallback=await api("/api/images",{method:"POST",body:JSON.stringify({queries:generated.imageQueries})});
+    const seen=new Set(foundImages.map(x=>x.id||x.originalUrl));
+    for(const image of (fallback.images||[])){
+     const key=image.id||image.originalUrl;
+     if(!seen.has(key)){seen.add(key);foundImages.push(image);}
+     if(foundImages.length>=5)break;
+    }
+   }catch(_){}
+  }
   $("title").value=generated.title||"";
   $("body").value=generated.body||"";
   renderKeywords(generated.keywords||[]);
