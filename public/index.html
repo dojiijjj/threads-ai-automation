@@ -54,7 +54,7 @@ button:disabled{opacity:.5;cursor:wait}
 @media(max-width:520px){.tossDesktopViewport{height:620px}.embedFrame{height:620px}}
 
 </style>
-<script src="/app.js?v=20" defer></script>
+<script src="/app.js?v=21" defer></script>
 <script>
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
@@ -71,7 +71,8 @@ if ("serviceWorker" in navigator) {
 <h2 style="margin-top:22px">기사 링크 입력</h2>
 <input id="articleUrl" type="url" placeholder="기사 URL 붙여넣기">
 <label class="checkLine"><input id="articleImagesAuthorized" type="checkbox"><span>기사 사진 사용 권한 있음</span></label>
-<div class="actions"><button id="fetchArticle">기사 정보 가져오기</button></div>
+<div class="actions"><button id="fetchArticle">기사 정보 가져오기</button><button id="randomArticle" class="secondary">랜덤 기사</button></div>
+<p class="muted">Google 뉴스, 연합뉴스, 다음뉴스, KBS 뉴스, 네이버 사회, 오마이뉴스, JTBC에서 각각 같은 확률로 선택해.</p>
 <div id="message" role="status"></div>
 </div>
 
