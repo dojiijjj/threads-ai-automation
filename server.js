@@ -176,14 +176,14 @@ app.post("/api/generate",async(req,res)=>{
       result.body=cleanBlogText(result.body);
        const arr=(v,n)=>Array.isArray(v)?v.map(x=>String(x||"").trim()).filter(Boolean).slice(0,n):[];
        result.keywords=arr(result.keywords,3).map(cleanBlogText);
-       const makeTag=value=>cleanBlogText(value).replace(/\\s+/g,"").replace(/[^\\p{L}\\p{N}]/gu,"");
+       const makeTag=value=>cleanBlogText(value).replace(/\s+/g,"").replace(/[^\p{L}\p{N}]/gu,"");
        const tags=[],addTag=value=>{const t=makeTag(value);if(t&&!tags.includes(t)&&tags.length<20)tags.push(t);};
        arr(result.hashtags,30).forEach(addTag);
        [product.title,product.brand,product.title+"추천",product.title+"정보",product.title+"가격",product.title+"특징",product.title+"비교",product.title+"구매",product.title+"선택",product.title+"제품"].forEach(addTag);
        ["제품정보","상품정보","구매가이드","제품비교","상품추천","제품특징","구매팁","제품선택","상품리뷰","제품분석"].forEach(addTag);
        while(tags.length<20)addTag(product.title+"정보"+(tags.length+1));
        result.hashtags=tags.slice(0,20);
-       result.body=result.body.replace(/\\s*#[^\\s#]+/g,"").trim()+"\\n\\n"+result.hashtags.map(t=>"#"+t).join(" ");
+       result.body=result.body.replace(/\s*#[^\s#]+/g,"").trim()+"\n\n"+result.hashtags.map(t=>"#"+t).join(" ");
        result.imageQueries=arr(result.imageQueries,5);
        result.imageAlts=arr(result.imageAlts,5);result.imageCaptions=arr(result.imageCaptions,5);result.imagePlacements=arr(result.imagePlacements,5);
        while(result.keywords.length<3)result.keywords.push(product.title);
