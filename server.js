@@ -8,6 +8,7 @@ app.use(express.static(path.join(__dirname,"public")));
 const PORT=process.env.PORT||3000;
 const MODELS=["gemini-3.8-flash","gemini-3.6-flash","gemini-3.5-flash-lite"];
 const productCache=new Map();
+const imageCache=new Map();
 const clean=(v,n=3000)=>String(v||"").trim().slice(0,n);
 function urlOf(v){const m=String(v||"").match(/https?:\/\/[^\s<>"']+/i);if(!m)throw new Error("상품 URL을 입력해 주세요.");const u=new URL(m[0].replace(/[.,!?;:，。！？；：)\]}》〉」』】]+$/u,""));if(!["http:","https:"].includes(u.protocol)||u.username||u.password)throw new Error("올바른 상품 URL이 아닙니다.");return u.toString();}
 function privateIp(a){if(net.isIPv4(a)){const p=a.split(".").map(Number);return p[0]===0||p[0]===10||p[0]===127||(p[0]===169&&p[1]===254)||(p[0]===172&&p[1]>=16&&p[1]<=31)||(p[0]===192&&p[1]===168)||p[0]>=224;}if(net.isIPv6(a)){const x=a.toLowerCase();return x==="::"||x==="::1"||x.startsWith("fc")||x.startsWith("fd")||x.startsWith("fe8")||x.startsWith("fe9")||x.startsWith("fea")||x.startsWith("feb");}return true;}
@@ -110,11 +111,69 @@ async function extractProductInfo(html,baseUrl){
  const images=await productImageList(html,baseUrl,productNode);
  return {url:baseUrl,title:name||title,description:clean(description,1800),brand,price,currency,availability,sku,features,images,pageText};
 }
+async function downloadProductImage(raw,referer,depth=0){
+ if(depth>4)throw new Error("이미지 이동 주소가 너무 많습니다.");
+ const target=urlOf(raw);
+ await checkHost(target);
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
+ try{
+  const response=await fetch(target,{redirect:"manual",signal:controller.signal,headers:{
+   "User-Agent":"Mozilla/5.0",
+   "Accept":"image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+   "Referer":referer
+  }});
+  if([301,302,303,307,308].includes(response.status)){
+   const loc=response.headers.get("location");
+   if(response.body)await response.body.cancel().catch(()=>{});
+   if(!loc)throw new Error("이미지 이동 주소를 확인할 수 없습니다.");
+   return downloadProductImage(new URL(loc,target).toString(),referer,depth+1);
+  }
+  if(!response.ok)throw new Error("이미지를 가져오지 못했습니다.");
+  const type=(response.headers.get("content-type")||"").split(";")[0].trim().toLowerCase();
+  if(!type.startsWith("image/"))throw new Error("이미지 파일이 아닌 주소입니다.");
+  const length=Number(response.headers.get("content-length")||0);
+  if(length>8*1024*1024)throw new Error("이미지 파일이 너무 큽니다.");
+  const buffer=Buffer.from(await response.arrayBuffer());
+  if(!buffer.length||buffer.length>8*1024*1024)throw new Error("이미지 파일 크기가 올바르지 않습니다.");
+  return {buffer,type};
+ }catch(e){
+  if(e.name==="AbortError")throw new Error("이미지 다운로드 시간이 초과됐습니다.");
+  throw e;
+ }finally{clearTimeout(timer);}
+}
+app.get("/media/:id",async(req,res)=>{
+ const item=imageCache.get(req.params.id);
+ if(!item||Date.now()-item.createdAt>24*60*60*1000){
+  imageCache.delete(req.params.id);
+  return res.status(404).type("text/plain").send("Image expired");
+ }
+ try{
+  const asset=await downloadProductImage(item.source,item.referer);
+  res.set({
+   "Content-Type":asset.type,
+   "Content-Length":String(asset.buffer.length),
+   "Cache-Control":"public, max-age=86400",
+   "X-Content-Type-Options":"nosniff",
+   "Content-Disposition":"inline"
+  });
+  res.status(200).send(asset.buffer);
+ }catch(e){
+  console.warn("Product image proxy:",e.message);
+  res.status(502).type("text/plain").send("Image unavailable");
+ }
+});
 app.get("/api/preview",async(req,res)=>{
  try{
   const url=urlOf(req.query.url),html=await fetchPage(url),product=await extractProductInfo(html,url);
   productCache.set(url,{product,createdAt:Date.now()});
-  res.json({ok:true,...product,images:product.images.slice(0,8)});
+  for(const [id,item] of imageCache){if(Date.now()-item.createdAt>24*60*60*1000)imageCache.delete(id);}
+  const images=product.images.slice(0,8).map(source=>{
+   const id=require("crypto").randomUUID();
+   imageCache.set(id,{source,referer:url,createdAt:Date.now()});
+   return "/media/"+id;
+  });
+  while(imageCache.size>500)imageCache.delete(imageCache.keys().next().value);
+  res.json({ok:true,...product,images});
  }catch(e){res.status(422).json({error:e.message||"상품 정보를 읽지 못했습니다."});}
 });
 function stripMeta(value){return decode(String(value||"").replace(/<[^>]*>/g," ").replace(/&nbsp;/gi," ")).slice(0,350);}
