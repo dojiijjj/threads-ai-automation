@@ -8,6 +8,7 @@ app.use(express.static(path.join(__dirname,"public")));
 const PORT=process.env.PORT||3000;
 const MODELS=["gemini-3.8-flash","gemini-3.6-flash","gemini-3.5-flash-lite"];
 const productCache=new Map();
+const articleCache=new Map();
 const imageCache=new Map();
 const clean=(v,n=3000)=>String(v||"").trim().slice(0,n);
 function urlOf(v){const m=String(v||"").match(/https?:\/\/[^\s<>"']+/i);if(!m)throw new Error("상품 URL을 입력해 주세요.");const u=new URL(m[0].replace(/[.,!?;:，。！？；：)\]}》〉」』】]+$/u,""));if(!["http:","https:"].includes(u.protocol)||u.username||u.password)throw new Error("올바른 상품 URL이 아닙니다.");return u.toString();}
@@ -26,7 +27,7 @@ function findProductNode(value){
  for(const key of Object.keys(value)){if(key==="offers"||key==="brand")continue;const found=findProductNode(value[key]);if(found)return found;}
  return null;
 }
-async function productImageList(html,baseUrl,productNode){
+async function productImageList(html,baseUrl,productNode,maxImages=8,scopeHtml=html){
  const candidates=[];
  const add=value=>{
   const items=Array.isArray(value)?value:[value];
@@ -80,7 +81,7 @@ async function productImageList(html,baseUrl,productNode){
   if(head)return head;
   return probe(url,"GET");
  }));
- return [...new Set(checked.filter(Boolean))].slice(0,8);
+ return [...new Set(checked.filter(Boolean))].slice(0,maxImages);
 }
 async function extractProductInfo(html,baseUrl){
  const titleTag=html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
@@ -175,6 +176,156 @@ app.get("/api/preview",async(req,res)=>{
   while(imageCache.size>500)imageCache.delete(imageCache.keys().next().value);
   res.json({ok:true,...product,images});
  }catch(e){res.status(422).json({error:e.message||"상품 정보를 읽지 못했습니다."});}
+});
+function findArticleNode(value){
+ if(!value)return null;
+ if(Array.isArray(value)){for(const item of value){const found=findArticleNode(item);if(found)return found;}return null;}
+ if(typeof value!=="object")return null;
+ const type=value["@type"];
+ const types=(Array.isArray(type)?type:[type]).map(x=>String(x||"").toLowerCase());
+ if(types.some(x=>["article","newsarticle","blogposting","report","analysisnewsarticle","liveblogposting"].includes(x))&&(value.headline||value.articleBody||value.name))return value;
+ if(value["@graph"]){const found=findArticleNode(value["@graph"]);if(found)return found;}
+ for(const key of Object.keys(value)){const found=findArticleNode(value[key]);if(found)return found;}
+ return null;
+}
+function articleScope(html){
+ const articles=[...html.matchAll(/<article\b[^>]*>[\s\S]*?<\/article>/gi)].map(x=>x[0]);
+ if(articles.length)return articles.sort((a,b)=>b.length-a.length)[0];
+ const mains=[...html.matchAll(/<main\b[^>]*>[\s\S]*?<\/main>/gi)].map(x=>x[0]);
+ if(mains.length)return mains.sort((a,b)=>b.length-a.length)[0];
+ return html;
+}
+function articleTextFromHtml(fragment){
+ return String(fragment||"")
+  .replace(/<!--[\s\S]*?-->/g," ")
+  .replace(/<(script|style|svg|noscript|nav|header|footer|aside|form|iframe|figure|picture)\b[^>]*>[\s\S]*?<\/\1>/gi," ")
+  .replace(/<(div|section)\b[^>]*(?:class|id)=["'][^"']*(?:ad-|advert|banner|related|recommend|share|comment|breadcrumb|sidebar|social|sns|promo|subscribe|cookie)[^"']*["'][^>]*>[\s\S]*?<\/\1>/gi," ")
+  .replace(/<(br|\/p|\/div|\/li|\/tr|\/h[1-6])\b[^>]*>/gi,"\n")
+  .replace(/<[^>]+>/g," ")
+  .replace(/&nbsp;|&#160;/gi," ")
+  .replace(/&amp;/gi,"&").replace(/&quot;/gi,'"').replace(/&#39;|&apos;/gi,"'")
+  .replace(/&lt;/gi,"<").replace(/&gt;/gi,">")
+  .replace(/&#(\d+);/g,(_,n)=>String.fromCharCode(Number(n)))
+  .replace(/[ \t]+/g," ")
+  .replace(/ *\n */g,"\n")
+  .replace(/\n{3,}/g,"\n\n")
+  .split("\n").map(line=>line.trim()).filter(line=>line.length>8).join("\n")
+  .slice(0,12000).trim();
+}
+async function extractArticleInfo(html,baseUrl,useImages){
+ let articleNode=null;
+ for(const match of html.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)){
+  try{articleNode=findArticleNode(JSON.parse(match[1].trim()));if(articleNode)break;}catch(_){}
+ }
+ const scope=articleScope(html);
+ const title=clean(articleNode?.headline||articleNode?.name||meta(html,"og:title")||meta(html,"twitter:title")||"",300);
+ const description=clean(articleNode?.description||meta(html,"og:description")||meta(html,"description")||"",1800);
+ let body=clean(articleNode?.articleBody||articleNode?.text||"",12000);
+ if(body.length<300)body=articleTextFromHtml(scope);
+ if(body.length<250)body=articleTextFromHtml(html);
+ if(!title&&!body)throw new Error("기사 제목과 본문을 읽지 못했습니다.");
+ if(body.length<250)throw new Error("기사 본문을 충분히 읽지 못했습니다. 로그인 또는 앱 전용 기사일 수 있습니다.");
+ const authorValue=articleNode?.author;
+ const author=clean(typeof authorValue==="string"?authorValue:Array.isArray(authorValue)?authorValue.map(x=>x.name||"").filter(Boolean).join(", "):authorValue?.name||"",200);
+ const publisher=clean(articleNode?.publisher?.name||new URL(baseUrl).hostname,160);
+ const published=clean(articleNode?.datePublished||meta(html,"article:published_time")||meta(html,"date")||"",80);
+ const imageSource=useImages?await productImageList(html,baseUrl,articleNode,20,scope):[];
+ return {url:baseUrl,title:title||"기사 요약",description,body,author,publisher,published,images:imageSource};
+}
+app.get("/api/article-preview",async(req,res)=>{
+ try{
+  const url=urlOf(req.query.url),useImages=String(req.query.useImages||"")==="1";
+  const html=await fetchPage(url);
+  const article=await extractArticleInfo(html,url,useImages);
+  articleCache.set(url,{article,createdAt:Date.now()});
+  for(const [id,item] of imageCache){if(Date.now()-item.createdAt>24*60*60*1000)imageCache.delete(id);}
+  const images=article.images.map(source=>{
+   const id=require("crypto").randomUUID();
+   imageCache.set(id,{source,referer:url,createdAt:Date.now()});
+   return "/media/"+id;
+  });
+  while(imageCache.size>500)imageCache.delete(imageCache.keys().next().value);
+  res.json({ok:true,...article,images});
+ }catch(e){res.status(422).json({error:e.message||"기사 정보를 읽지 못했습니다."});}
+});
+app.post("/api/generate-article",async(req,res)=>{
+ if(!process.env.GEMINI_API_KEY)return res.status(503).json({error:"Railway 환경변수 GEMINI_API_KEY가 필요합니다."});
+ let url="";
+ try{url=urlOf(req.body.url);}catch(e){return res.status(400).json({error:e.message});}
+ try{
+  const cached=articleCache.get(url);
+  if(!cached||Date.now()-cached.createdAt>30*60*1000)return res.status(409).json({error:"기사 정보가 만료됐습니다. 기사 링크를 먼저 가져와 주세요."});
+  const article=cached.article;
+  const prompt=[
+   "역할: 당신은 한국어 뉴스 해설과 검색엔진 최적화에 능한 전문 블로거입니다.",
+   "임무: 아래 원문 기사에서 확인되는 사실과 핵심 정보를 바탕으로 독자에게 도움이 되는 독립적인 정보성 블로그 글을 새로 작성합니다.",
+   "중요한 저작권 원칙: 원문 문장을 그대로 복사하거나 문장별로 단어만 바꾸어 재작성하지 마세요. 원문의 문단 순서와 표현을 그대로 따라가지 말고, 핵심 사실을 추려 새롭게 구성하고 독립적인 문장으로 설명합니다. 긴 인용은 사용하지 마세요.",
+   "기사 제목: "+article.title,
+   "언론사 또는 게시처: "+article.publisher,
+   "기자: "+(article.author||"확인되지 않음"),
+   "게시일: "+(article.published||"확인되지 않음"),
+   "기사 설명: "+article.description,
+   "원문 링크: "+url,
+   "기사 본문에서 추출한 참고 내용: "+article.body,
+   "작성 분량: 공백 포함 약 3000자에서 3800자 사이. 제목은 분량에서 제외합니다.",
+   "검색 최적화: 기사 핵심 주제에 맞는 메인 키워드 1개와 서브 키워드 2개를 도출합니다. 메인 키워드는 제목 앞부분과 도입부 첫 2~3문장 안에 배치하고 본문에 자연스럽게 3~5회 사용합니다.",
+   "구성: 사건이나 발표의 핵심 내용, 배경, 주요 사실, 관련 당사자와 영향, 독자가 알아야 할 점, 앞으로 확인할 쟁점을 자연스러운 순서로 설명합니다. 원문에 없는 사실이나 전망을 사실처럼 만들어내지 않습니다.",
+   "분석: 기사에 명시된 사실과 작성자의 해석을 분명히 구분합니다. 해석이나 맥락이 필요하면 추론임을 분명히 밝히고, 근거가 없는 단정은 피합니다.",
+   "문체: 자연스러운 한국어 존댓말. 짧고 읽기 쉬운 문단과 기호 없는 소제목을 사용합니다. 기계적인 반복 표현은 피합니다.",
+   "사실성: 숫자, 날짜, 인명, 기관명, 발언, 장소는 원문에 있는 경우에만 사용합니다. 불명확한 정보는 확인되지 않았다고 씁니다. 원문에 없는 당사자의 발언이나 경험을 만들어내지 않습니다.",
+   "문자 형식: 제목과 본문은 일반 텍스트만 사용합니다. 해시태그, 샵 기호, 별표, 밑줄, 백틱, 대괄호, 중괄호, 마크다운 문법, HTML 태그, 이모지, 장식용 구분선은 넣지 마세요. 번호 목록이나 불릿 목록 대신 문단과 소제목으로 작성합니다.",
+   "사진: 사진 자리표시자, URL, 출처 문구를 본문에 직접 쓰지 마세요. 사진은 프로그램이 별도로 본문 문단 사이에 배치합니다.",
+   "해시태그: 기사 주제와 관련된 서로 다른 검색어 20개를 만듭니다. 각 태그는 # 없이 단어 또는 짧은 구로 배열에 담습니다.",
+   "출력: 유효한 JSON 객체 하나만 출력합니다. 키는 keywords(문자열 배열 3개), title(문자열), body(문자열), hashtags(문자열 20개 배열)입니다. JSON 외 설명은 출력하지 마세요."
+  ].join("\n");
+  let lastError="응답 없음";
+  try{
+   for(const model of MODELS){
+    let timer;
+    try{
+     const controller=new AbortController();
+     timer=setTimeout(()=>controller.abort(),30000);
+     const thinkingLevel=model==="gemini-3.5-flash-lite"?"minimal":"low";
+     const response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},
+      body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.65,maxOutputTokens:5000,responseMimeType:"application/json",thinkingConfig:{thinkingLevel}}}),
+      signal:controller.signal
+     });
+     const data=await response.json().catch(()=>({}));
+     clearTimeout(timer);timer=null;
+     if(response.ok){
+      const raw=data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("").trim()||"";
+      const result=JSON.parse(raw);
+      if(!result.title||!result.body)throw new Error("AI 결과에 제목 또는 본문이 없습니다.");
+      result.title=cleanBlogText(result.title);
+      result.body=cleanBlogText(result.body);
+      const arr=(v,n)=>Array.isArray(v)?v.map(x=>String(x||"").trim()).filter(Boolean).slice(0,n):[];
+      result.keywords=arr(result.keywords,3).map(cleanBlogText);
+      const makeTag=value=>cleanBlogText(value).replace(/\s+/g,"").replace(/[^\p{L}\p{N}]/gu,"");
+      const tags=[],addTag=value=>{const t=makeTag(value);if(t&&!tags.includes(t)&&tags.length<20)tags.push(t);};
+      arr(result.hashtags,30).forEach(addTag);
+      [article.title,article.publisher,article.title+"뉴스",article.title+"분석",article.title+"내용",article.title+"정리",article.title+"영향",article.title+"이슈",article.title+"배경",article.title+"핵심"].forEach(addTag);
+      ["뉴스정리","최신이슈","시사정보","사회이슈","경제뉴스","정책분석","오늘의뉴스","뉴스해설","핵심내용","이슈분석"].forEach(addTag);
+      while(tags.length<20)addTag("뉴스정보"+(tags.length+1));
+      result.hashtags=tags.slice(0,20);
+      result.body=result.body.replace(/\s*#[^\s#]+/g,"").trim()+"\n\n"+result.hashtags.map(t=>"#"+t).join(" ");
+      while(result.keywords.length<3)result.keywords.push(article.title);
+      return res.json({...result,article:{title:article.title,publisher:article.publisher,author:article.author,published:article.published,url,images:article.images.length},model});
+     }
+     const message=data.error?.message||("Gemini 오류 "+response.status);
+     lastError=model+" / "+response.status+" / "+message;
+     if([400,401,403].includes(response.status))return res.status(response.status).json({error:lastError});
+     if(![404,429,500,502,503,504].includes(response.status))return res.status(502).json({error:lastError});
+    }catch(e){
+     clearTimeout(timer);
+     if(e.name==="AbortError"){lastError=model+" 응답 시간 초과";continue;}
+     lastError=e.message||String(e);
+    }
+   }
+   return res.status(503).json({error:"기본 모델과 대체 모델이 모두 응답하지 않습니다. 잠시 후 다시 시도해 주세요. 마지막 오류: "+lastError});
+  }catch(e){return res.status(502).json({error:e.message||"글 생성 중 오류가 발생했습니다."});}
+ }catch(e){return res.status(422).json({error:"기사 글 생성 중 오류가 발생했습니다: "+e.message});}
 });
 function stripMeta(value){return decode(String(value||"").replace(/<[^>]*>/g," ").replace(/&nbsp;/gi," ")).slice(0,350);}
 function licenseAllowed(value){const s=String(value||"").trim().toUpperCase();return s==="CC0"||s.includes("PUBLIC DOMAIN");}
