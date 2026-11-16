@@ -110,11 +110,12 @@ function cleanBlogText(value){
  return String(value||"").replace(/\r/g,"")
   .replace(/^\s{0,3}#{1,6}\s*/gm,"")
   .replace(/^[ \t]*[-*+][ \t]+/gm,"")
+  .replace(/^[ \t]*\d+[.)][ \t]+/gm,"")
   .replace(/^[ \t]*>+[ \t]?/gm,"")
   .replace(/\*\*(.*?)\*\*/g,"$1")
   .replace(/__(.*?)__/g,"$1")
   .replace(/\[([^\]]+)\]\([^)]+\)/g,"$1")
-  .replace(/[#*_~|{}<>]/g,"")
+  .replace(/[#*_[\]~|{}<>]/g,"")
   .replace(/\x60/g,"")
   .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\uFE0F]/gu,"")
   .replace(/\n{3,}/g,"\n\n")
@@ -161,7 +162,7 @@ app.post("/api/generate",async(req,res)=>{
    for(const model of MODELS){
     for(let attempt=0;attempt<2;attempt++){
      try{
-      const response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.65,maxOutputTokens:3800,responseMimeType:"application/json"}}),signal:controller.signal});
+      const response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{temperature:0.65,maxOutputTokens:6500,responseMimeType:"application/json"}}),signal:controller.signal});
       const data=await response.json().catch(()=>({}));
       if(response.ok){
        const raw=data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("").trim()||"";
@@ -170,7 +171,7 @@ app.post("/api/generate",async(req,res)=>{
       result.title=cleanBlogText(result.title);
       result.body=cleanBlogText(result.body);
        const arr=(v,n)=>Array.isArray(v)?v.map(x=>String(x||"").trim()).filter(Boolean).slice(0,n):[];
-       result.keywords=arr(result.keywords,3);result.imageQueries=arr(result.imageQueries,5);
+       result.keywords=arr(result.keywords,3).map(cleanBlogText);result.imageQueries=arr(result.imageQueries,5);
        result.imageAlts=arr(result.imageAlts,5);result.imageCaptions=arr(result.imageCaptions,5);result.imagePlacements=arr(result.imagePlacements,5);
        while(result.keywords.length<3)result.keywords.push(product.title);
        while(result.imageQueries.length<5)result.imageQueries.push(product.title+" product detail");
