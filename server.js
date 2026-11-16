@@ -364,15 +364,18 @@ async function searchRandomNewsFallback(allowUserAuthorized=false){
   const parsed=parseSearchJson(raw);
   const rawList=Array.isArray(parsed.articles)?parsed.articles:(parsed.article?[parsed.article]:[]);
   const groundedUrls=new Set(chunks.filter(x=>x.web?.uri).map(x=>{
-   try{const u=new URL(x.web.uri);return u.origin+u.pathname.replace(/\\/$/,"");}catch(_){return "";}
+   try{const u=new URL(x.web.uri);const pathname=u.pathname.endsWith("/")?u.pathname.slice(0,-1):u.pathname;return u.origin+pathname;}catch(_){return "";}
   }).filter(Boolean));
   const candidates=rawList.map(item=>{
    let url="";
    try{
     const u=new URL(urlOf(item.url||item.sourceUrl||""));
     if(u.protocol!=="https:"||u.username||u.password)return null;
-    url=u.origin+u.pathname.replace(/\\/$/,"");
-    if(!groundedUrls.has(url))return null;
+    if(u.pathname==="/")return null;
+    const pathname=u.pathname.endsWith("/")?u.pathname.slice(0,-1):u.pathname;
+    const groundedKey=u.origin+pathname;
+    if(!groundedUrls.has(groundedKey))return null;
+    url=u.toString();
    }catch(_){return null;}
    const title=clean(item.title,300);
    const publisher=clean(item.publisher||item.source,160);
