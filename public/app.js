@@ -1,7 +1,7 @@
 (()=>{
 "use strict";
 const $=id=>document.getElementById(id);
-let productInfo=null,resultData=null,foundImages=[],currentShareUrl="";
+let productInfo=null,articleInfo=null,resultData=null,foundImages=[],currentShareUrl="",contentMode="product";
 function msg(t){$("message").textContent=t;}
 async function api(url,opt={}){
  const r=await fetch(url,{...opt,headers:{"Content-Type":"application/json",...(opt.headers||{})}});
@@ -37,7 +37,7 @@ function makeImageFigure(url){
  const figure=document.createElement("figure");
  figure.className="articleImage";
  const img=document.createElement("img");
- img.src=url;img.alt="상품 대표 이미지";img.loading="lazy";
+ img.src=url;img.alt=contentMode==="article"?"기사 사진":"상품 대표 이미지";img.loading="lazy";
  img.onerror=()=>figure.remove();
  figure.appendChild(img);
  return figure;
@@ -59,7 +59,7 @@ function renderArticle(){
  const editor=$("articleEditor");
  editor.replaceChildren();
  if(!resultData)return;
- addShareDisclosure(editor);
+ if(contentMode==="product")addShareDisclosure(editor);
  const blocks=String(resultData.body||"").trim().split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean);
  const hashtagBlock=blocks.length&&blocks[blocks.length-1].startsWith("#")?blocks.pop():"";
  let photoIndex=0;
@@ -77,7 +77,15 @@ function renderArticle(){
   editor.appendChild(makeImageFigure(foundImages[photoIndex]));
   photoIndex++;
  }
- addShareDisclosure(editor);
+ if(contentMode==="product")addShareDisclosure(editor);
+ if(contentMode==="article"&&articleInfo){
+  const source=document.createElement("p");
+  source.className="articleSource";
+  const label=document.createElement("span");label.textContent="원문 기사: ";
+  const link=document.createElement("a");link.href=articleInfo.url;link.textContent=articleInfo.title||articleInfo.publisher||articleInfo.url;
+  link.target="_blank";link.rel="noopener noreferrer";
+  source.append(label,link);editor.appendChild(source);
+ }
  if(hashtagBlock){
   const tags=document.createElement("p");tags.className="hashtags";tags.textContent=hashtagBlock;
   editor.appendChild(tags);
@@ -118,9 +126,33 @@ $("fetchProduct").onclick=async()=>{
  msg("상품페이지에서 실제 대표 이미지를 확인하는 중...");
  try{
   const data=await api("/api/preview?url="+encodeURIComponent(url));
+  articleInfo=null;contentMode="product";
+  $("articlePanel").classList.add("hidden");
   productInfo=data;currentShareUrl=data.url||url;renderProduct(data);
   msg("상품 정보를 가져왔어. 아래 버튼을 눌러 글을 생성해 줘.");
  }catch(e){msg("상품 정보 수집 실패: "+e.message);}
+ finally{button.disabled=false;}
+};
+$("fetchArticle").onclick=async()=>{
+ const url=$("articleUrl").value.trim();
+ if(!url){msg("기사 링크를 입력해 줘.");$("articleUrl").focus();return;}
+ const button=$("fetchArticle");button.disabled=true;
+ $("productPanel").classList.add("hidden");$("articlePanel").classList.add("hidden");$("result").classList.add("hidden");
+ productInfo=null;articleInfo=null;resultData=null;foundImages=[];currentShareUrl="";contentMode="article";
+ msg("기사 제목과 본문을 가져오는 중...");
+ try{
+  const useImages=$("articleImageRights").checked;
+  const data=await api("/api/article-preview?url="+encodeURIComponent(url)+"&useImages="+(useImages?"1":"0"));
+  articleInfo=data;
+  const box=$("articleInfo");box.replaceChildren();
+  addInfoRow(box,"기사 제목",data.title);
+  addInfoRow(box,"언론사",data.publisher);
+  addInfoRow(box,"기자",data.author);
+  addInfoRow(box,"게시일",data.published);
+  addInfoRow(box,"기사 사진",(data.images||[]).length+"장");
+  $("articlePanel").classList.remove("hidden");
+  msg("기사 정보를 가져왔어. 아래 버튼을 눌러 새 글을 생성해 줘.");
+ }catch(e){msg("기사 정보 수집 실패: "+e.message);}
  finally{button.disabled=false;}
 };
 $("generate").onclick=async()=>{
@@ -129,6 +161,7 @@ $("generate").onclick=async()=>{
  $("result").classList.add("hidden");resultData=null;foundImages=[];
  msg("상품 정보와 대표 이미지를 이용해 글을 작성 중...");
  try{
+  contentMode="product";
   resultData=await api("/api/generate",{method:"POST",body:JSON.stringify({url:productInfo.url})});
   foundImages=(productInfo.images||[]).slice(0,8).map(url=>new URL(url,location.origin).toString());
   $("title").value=resultData.title||"";
@@ -139,6 +172,22 @@ $("generate").onclick=async()=>{
  }catch(e){msg("글 생성 실패: "+e.message);}
  finally{button.disabled=false;}
 };
+$("generateArticle").onclick=async()=>{
+ if(!articleInfo){msg("먼저 기사 정보를 가져와 줘.");return;}
+ const button=$("generateArticle");button.disabled=true;
+ $("result").classList.add("hidden");resultData=null;foundImages=[];contentMode="article";currentShareUrl="";
+ msg("기사 내용을 바탕으로 새 블로그 글을 작성 중...");
+ try{
+  resultData=await api("/api/generate-article",{method:"POST",body:JSON.stringify({url:articleInfo.url})});
+  foundImages=(articleInfo.images||[]).slice(0,20).map(url=>new URL(url,location.origin).toString());
+  $("title").value=resultData.title||"";
+  renderArticle();
+  $("result").classList.remove("hidden");
+  msg("완료. 기사 내용과 사용 권한을 확인한 사진 "+foundImages.length+"장을 본문에 넣었어.");
+ }catch(e){msg("기사 글 생성 실패: "+e.message);}
+ finally{button.disabled=false;}
+};
+
 $("copyHtml").onclick=async()=>{
  if(!resultData||!articleText().trim()){msg("먼저 글을 생성해 줘.");return;}
  try{await copyRichHtml();msg("사진 주소가 포함된 HTML 코드를 복사했어. 티스토리 편집기에서 HTML 모드로 전환한 뒤 붙여넣어 줘.");}
