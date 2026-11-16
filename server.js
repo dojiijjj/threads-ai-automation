@@ -47,7 +47,7 @@ async function productImageList(html,baseUrl,productNode,maxImages=8,scopeHtml=h
  add(meta(html,"og:image:secure_url"));
  add(meta(html,"twitter:image"));
  if(productNode)add(productNode.image);
- const tags=html.match(/<img\b[^>]*>/gi)||[];
+ const tags=scopeHtml.match(/<img\b[^>]*>/gi)||[];
  for(const tag of tags.slice(0,100)){
   const attrs={};
   tag.replace(/([\w:-]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/g,(_,k,z,d,s,v)=>(attrs[k.toLowerCase()]=d??s??v,z));
