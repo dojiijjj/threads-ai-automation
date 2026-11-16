@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "Google SEO 블로그 자동작성",
+  "short_name": "블로그 자동작성",
+  "description": "상품과 기사 링크로 SEO 블로그 글과 사진을 만드는 도구",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#101116",
+  "theme_color": "#111318",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
