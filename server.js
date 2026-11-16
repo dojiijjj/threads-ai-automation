@@ -70,7 +70,7 @@ app.get("/api/preview",async(req,res)=>{
  try{
   const url=urlOf(req.query.url),html=await fetchPage(url),product=extractProductInfo(html,url);
   productCache.set(url,{product,createdAt:Date.now()});
-  res.json({ok:true,...product,images:product.images.slice(0,5)});
+  res.json({ok:true,...product,images:product.images.slice(0,8)});
  }catch(e){res.status(422).json({error:e.message||"상품 정보를 읽지 못했습니다."});}
 });
 function stripMeta(value){return decode(String(value||"").replace(/<[^>]*>/g," ").replace(/&nbsp;/gi," ")).slice(0,350);}
@@ -156,9 +156,8 @@ app.post("/api/generate",async(req,res)=>{
   "사실성: 실제 사용 경험이 제공되지 않았습니다. 직접 구매했다, 사용해 봤다, 만족했다, 가족이 써 봤다는 경험담을 절대 꾸며내지 마세요. 확인되지 않은 가격, 할인, 사양, 기능, 효능, 소재, 구성, 배송, 재고, 평점, 인증, 내구성을 만들지 마세요. 정보가 부족한 항목은 확인되지 않았다고 말하거나 구매 전 상세페이지에서 확인할 항목으로 안내합니다.",
   "문자 형식: 본문과 제목은 일반 텍스트만 사용합니다. 해시태그, 샵 기호, 별표, 밑줄, 백틱, 대괄호, 중괄호, 인용 블록, 마크다운 문법, HTML 태그, 이모지, 장식용 구분선, 특수 기호를 넣지 마세요. 번호 목록이나 불릿 목록 대신 자연스러운 문단과 소제목으로 작성합니다. 소제목은 기호 없이 문장만 단독 줄에 적습니다.",
   "사진: 본문 중간에 사진 자리표시자나 출처, 저작자, 라이선스, URL을 쓰지 마세요. 사진 배치는 프로그램이 본문 문단 사이에 자동으로 넣습니다. 사진 캡션도 본문에 생성하지 마세요.",
-  "이미지 검색: 관련 사진을 자동으로 찾기 위한 서로 다른 영어 검색어 5개를 생성합니다. 제품 카테고리, 구조, 관련 사용 환경, 디테일을 보여주는 사진을 고릅니다. 사진 검색어는 상품과 직접 관련되게 구체적으로 작성합니다. 각 사진에 대한 대체 텍스트와 짧은 설명도 별도 JSON 필드로 작성합니다.",
   "해시태그: 상품명, 브랜드, 제품 종류, 구매 의도와 관련된 실제 검색어를 바탕으로 서로 겹치지 않는 해시태그 20개를 만듭니다. 너무 넓은 단어와 무관한 유행어는 제외합니다. 각 태그는 #을 포함하지 않은 단어 또는 짧은 구로 JSON 배열에 담습니다. 게시글 맨 마지막에 해시태그 20개를 한 줄로 붙입니다. 이 해시태그 줄 외에는 # 기호를 절대 사용하지 않습니다.",
-  "출력: 유효한 JSON 객체 하나만 출력합니다. 키는 keywords(메인 키워드 1개와 서브 키워드 2개, 문자열 배열 3개), title(문자열), body(문자열), hashtags(문자열 20개 배열), imageQueries(영어 검색어 5개 배열), imageAlts(문자열 5개 배열), imageCaptions(문자열 5개 배열), imagePlacements(문자열 5개 배열)입니다. JSON 외 설명이나 마크다운 코드블록은 출력하지 않습니다."
+  "출력: 유효한 JSON 객체 하나만 출력합니다. 키는 keywords(메인 키워드 1개와 서브 키워드 2개, 문자열 배열 3개), title(문자열), body(문자열), hashtags(문자열 20개 배열)입니다. JSON 외 설명이나 마크다운 코드블록은 출력하지 않습니다."
  ].join("\n");
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),90000);
   let lastError="응답 없음";
@@ -184,14 +183,8 @@ app.post("/api/generate",async(req,res)=>{
        while(tags.length<20)addTag(product.title+"정보"+(tags.length+1));
        result.hashtags=tags.slice(0,20);
        result.body=result.body.replace(/\s*#[^\s#]+/g,"").trim()+"\n\n"+result.hashtags.map(t=>"#"+t).join(" ");
-       result.imageQueries=arr(result.imageQueries,5);
-       result.imageAlts=arr(result.imageAlts,5);result.imageCaptions=arr(result.imageCaptions,5);result.imagePlacements=arr(result.imagePlacements,5);
        while(result.keywords.length<3)result.keywords.push(product.title);
-       while(result.imageQueries.length<5)result.imageQueries.push(product.title+" product detail");
-       while(result.imageAlts.length<5)result.imageAlts.push(result.imageQueries[result.imageAlts.length]);
-       while(result.imageCaptions.length<5)result.imageCaptions.push(result.imageAlts[result.imageCaptions.length]);
-       while(result.imagePlacements.length<5)result.imagePlacements.push(["도입부 다음","제품 개요 뒤","주요 특징 설명 뒤","구매 전 확인 사항 근처","마무리 전"][result.imagePlacements.length]);
-       return res.json({...result,product:{title:product.title,brand:product.brand,price:product.price,currency:product.currency,description:product.description,url,images:product.images.slice(0,3)},model});
+       return res.json({...result,product:{title:product.title,brand:product.brand,price:product.price,currency:product.currency,description:product.description,url,images:product.images.slice(0,8)},model});
       }
       const message=data.error?.message||("Gemini 오류 "+response.status);lastError=model+" / "+response.status+" / "+message;
       if([400,401,403].includes(response.status))return res.status(response.status).json({error:lastError});
