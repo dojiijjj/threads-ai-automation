@@ -54,7 +54,7 @@ button:disabled{opacity:.5;cursor:wait}
 @media(max-width:520px){.tossDesktopViewport{height:620px}.embedFrame{height:620px}}
 
 </style>
-<script src="/app.js?v=19" defer></script>
+<script src="/app.js?v=20" defer></script>
 <script>
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
@@ -106,4 +106,29 @@ if ("serviceWorker" in navigator) {
 </div>
 </div>
 </div>
-</main></body></html>
+</main>
+<script>
+(() => {
+  const status = document.getElementById("status");
+  if (!status) return;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  fetch("/api/status?check=" + Date.now(), {
+    cache: "no-store",
+    signal: controller.signal,
+    headers: { "Cache-Control": "no-cache" }
+  })
+    .then(response => {
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      return response.json();
+    })
+    .then(data => {
+      status.textContent = data.aiConfigured ? "AI 연결됨" : "API 키 설정 필요";
+    })
+    .catch(() => {
+      status.textContent = "연결 오류";
+    })
+    .finally(() => clearTimeout(timeout));
+})();
+</script>
+</body></html>
