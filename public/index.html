@@ -25,53 +25,66 @@ button:disabled{opacity:.5;cursor:wait}
 .muted{font-size:12px;color:#9b9daa;line-height:1.6}
 .hidden{display:none!important}
 #message{white-space:pre-wrap;color:#c7d2fe;font-size:13px;line-height:1.5;margin-top:12px}
-.chips{display:flex;gap:7px;flex-wrap:wrap}
-.chip{font-size:12px;color:#dce0ff;background:#303344;border-radius:20px;padding:6px 10px}
+.infoGrid{display:grid;grid-template-columns:92px 1fr;gap:9px 12px;margin-top:12px;font-size:13px;line-height:1.55}
+.infoGrid .key{color:#a7a9b4}
+.infoGrid .value{color:#f1f1f4;overflow-wrap:anywhere}
+.productShots{display:flex;gap:9px;overflow-x:auto;margin-top:13px;padding-bottom:4px}
+.productShots img{width:104px;height:104px;object-fit:contain;background:#fff;border-radius:9px;flex:0 0 auto}
 .imageGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
 .imageCard{background:#12141a;border:1px solid #363944;border-radius:12px;overflow:hidden;min-width:0}
 .imageCard img{width:100%;height:160px;object-fit:cover;display:block;background:#252832}
 .imageCard .meta{padding:10px}
 .imageCard .name{font-size:12px;line-height:1.4;font-weight:700;overflow-wrap:anywhere}
-.imageCard .detail{font-size:11px;color:#a6a8b2;line-height:1.5;margin-top:6px;overflow-wrap:anywhere}
-.imageCard a{color:#cbd3ff;font-size:11px}
 .articlePreview{background:#fff;color:#242424;border-radius:12px;padding:16px;line-height:1.85;font-size:14px;overflow-wrap:anywhere}
 .articlePreview h1{font-size:21px;color:#111;margin:0 0 18px;line-height:1.4}
 .articlePreview h2{font-size:18px;color:#111;margin:22px 0 10px}
 .articlePreview p{margin:0 0 15px}
 .articlePreview figure{margin:18px 0 24px}
 .articlePreview figure img{width:100%;max-height:380px;object-fit:contain;display:block}
-.articlePreview figcaption{font-size:11px;color:#666;line-height:1.55;margin-top:7px}
+.step{display:flex;gap:8px;align-items:center;font-size:12px;color:#aaa;margin-top:8px}
+.dot{width:7px;height:7px;border-radius:50%;background:#8192d8;flex:none}
 @media(max-width:480px){.imageGrid{grid-template-columns:1fr 1fr}.imageCard img{height:125px}}
 </style>
-<script src="/app.js?v=5" defer></script>
+<script src="/app.js?v=6" defer></script>
 </head>
 <body><main>
 <div class="top"><div class="brand">✍️ Google SEO 상품 블로그</div><div class="status" id="status">연결 확인 중</div></div>
+
 <div class="card">
-<h2>상품 링크를 입력하세요</h2>
+<h2>1. 상품 링크 입력</h2>
 <input id="url" type="url" placeholder="상품 상세페이지 URL 붙여넣기">
-<div class="actions"><button id="generate">상품 정보 분석하고 블로그 글 생성</button></div>
-<p class="muted">상품 링크에서 제품명·브랜드·설명·가격·대표 이미지를 자동으로 수집합니다. 확인된 정보만 사용해 구글 검색에 적합한 글을 작성하고 관련 사진도 자동으로 찾아 넣습니다.</p>
+<div class="actions"><button id="fetchProduct">상품 정보 가져오기</button></div>
+<div class="step"><span class="dot"></span><span>먼저 상품 정보만 빠르게 확인한 뒤, 아래 버튼으로 글을 생성합니다.</span></div>
 <div id="message" role="status"></div>
 </div>
+
+<div id="productPanel" class="card hidden">
+<h2>2. 수집된 상품 정보</h2>
+<div id="productInfo" class="infoGrid"></div>
+<div id="productShots" class="productShots"></div>
+<p class="muted" id="productNotice"></p>
+<div class="actions"><button id="generate">이 상품으로 글과 사진 생성</button></div>
+</div>
+
 <div id="result" class="hidden">
 <div class="card">
-<h2>SEO 핵심 키워드</h2>
-<div id="keywords" class="chips"></div>
-<label for="title">추천 블로그 제목</label>
+<h2>3. 구글 SEO 포스팅 결과</h2>
+<div id="keywords" class="muted"></div>
+<label for="title">추천 제목</label>
 <input id="title" type="text">
-<label for="body">최종 블로그 본문</label>
+<label for="body">본문과 해시태그 20개</label>
 <textarea id="body"></textarea>
-<div class="actions"><button id="copyHtml">이미지 포함 글 전체 복사</button><button id="copyText" class="secondary">텍스트만 복사</button></div>
+<div class="actions"><button id="copyHtml" class="secondary">글 전체 복사</button><button id="copyText" class="secondary">텍스트 복사</button></div>
 </div>
 <div class="card">
-<h2>본문에 자동 배치된 관련 사진</h2>
+<h2>자동으로 찾은 관련 사진</h2>
 <div id="images" class="imageGrid"></div>
-<p class="muted">상품 상세페이지 대표 이미지는 원본 판매 페이지를 출처로 표시합니다. 추가 이미지는 이용 가능한 공개 라이선스가 확인된 자료를 우선 사용하고, 원본·작가·라이선스 정보를 함께 표시합니다. 판매 페이지 이미지의 재사용 가능 여부는 판매처 조건을 확인해야 합니다.</p>
 </div>
 <div class="card">
-<h2>이미지 포함 미리보기</h2>
+<h2>최종 글 미리보기</h2>
 <div id="articlePreview" class="articlePreview"></div>
+<div class="actions"><button id="toTistory">티스토리 글쓰기 열고 글 옮기기</button></div>
+<p class="muted">버튼을 누르면 글 전체를 서식 포함 HTML로 복사하고 티스토리 글쓰기 화면을 엽니다. 티스토리 편집기에 붙여넣은 뒤 게시 버튼만 누르면 됩니다.</p>
 </div>
 </div>
 </main></body></html>
