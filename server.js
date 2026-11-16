@@ -25,19 +25,63 @@ function findProductNode(value){
  for(const key of Object.keys(value)){if(key==="offers"||key==="brand")continue;const found=findProductNode(value[key]);if(found)return found;}
  return null;
 }
-function productImageList(html,baseUrl,productNode){
- const raw=[];
- const add=(value)=>{for(const item of (Array.isArray(value)?value:[value])){if(typeof item!=="string")continue;try{const u=new URL(item,baseUrl);if(u.protocol==="https:"&&!u.username&&!u.password&&!/sprite|logo|icon|pixel|blank|placeholder/i.test(u.pathname))raw.push(u.toString());}catch(_){}}};
- add(meta(html,"og:image"));add(meta(html,"og:image:secure_url"));add(meta(html,"twitter:image"));
+async function productImageList(html,baseUrl,productNode){
+ const candidates=[];
+ const add=value=>{
+  const items=Array.isArray(value)?value:[value];
+  for(const item of items){
+   const raw=typeof item==="string"?item:(item&&typeof item==="object"?(item.url||item.contentUrl||""):"");
+   if(!raw)continue;
+   try{
+    const u=new URL(raw,baseUrl);
+    if(u.protocol==="http:")u.protocol="https:";
+    if(u.protocol!=="https:"||u.username||u.password)continue;
+    if(/sprite|logo|icon|pixel|blank|placeholder|no[-_]?image|loading|default[-_]?image|spacer/i.test(u.pathname))continue;
+    candidates.push(u.toString());
+   }catch(_){}
+  }
+ };
+ add(meta(html,"og:image"));
+ add(meta(html,"og:image:secure_url"));
+ add(meta(html,"twitter:image"));
  if(productNode)add(productNode.image);
  const tags=html.match(/<img\b[^>]*>/gi)||[];
- for(const tag of tags.slice(0,90)){
-  const attrs={};tag.replace(/([\w:-]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/g,(_,k,z,d,s,v)=>(attrs[k.toLowerCase()]=d??s??v,z));
-  add(attrs["data-src"]||attrs["data-original"]||attrs.src||attrs["data-lazy-src"]);
+ for(const tag of tags.slice(0,100)){
+  const attrs={};
+  tag.replace(/([\w:-]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/g,(_,k,z,d,s,v)=>(attrs[k.toLowerCase()]=d??s??v,z));
+  const dimensions=[attrs.width,attrs.height].map(v=>parseInt(v,10)).filter(Number.isFinite);
+  if(dimensions.some(v=>v>0&&v<80))continue;
+  const srcset=String(attrs.srcset||"").split(",").map(x=>x.trim().split(/\s+/)[0]).filter(Boolean).pop();
+  add(attrs["data-zoom-image"]||attrs["data-original"]||attrs["data-lazy-src"]||attrs["data-src"]||attrs.src||srcset);
  }
- return [...new Set(raw)].slice(0,8);
+ const unique=[...new Set(candidates)].slice(0,18);
+ async function probe(raw,method,depth=0){
+  if(depth>3)return null;
+  const u=new URL(raw);
+  await checkHost(u.toString());
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),4000);
+  try{
+   const response=await fetch(u.toString(),{method,redirect:"manual",signal:controller.signal,headers:{"User-Agent":"Mozilla/5.0","Accept":"image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",...(method==="GET"?{Range:"bytes=0-0"}:{}),Referer:baseUrl}});
+   if([301,302,303,307,308].includes(response.status)){
+    const loc=response.headers.get("location");
+    if(response.body)await response.body.cancel().catch(()=>{});
+    return loc?await probe(new URL(loc,u).toString(),method,depth+1):null;
+   }
+   const type=(response.headers.get("content-type")||"").toLowerCase();
+   const valid=response.ok&&type.startsWith("image/");
+   if(response.body)await response.body.cancel().catch(()=>{});
+   return valid?u.toString():null;
+  }catch(_){return null;}
+  finally{clearTimeout(timer);}
+ }
+ const checked=await Promise.all(unique.map(async url=>{
+  const head=await probe(url,"HEAD");
+  if(head)return head;
+  return probe(url,"GET");
+ }));
+ return [...new Set(checked.filter(Boolean))].slice(0,8);
 }
-function extractProductInfo(html,baseUrl){
+async function extractProductInfo(html,baseUrl){
  const titleTag=html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
  const title=meta(html,"og:title")||meta(html,"twitter:title")||decode(titleTag?titleTag[1].replace(/<[^>]+>/g," "):"");
  const description=meta(html,"og:description")||meta(html,"description")||meta(html,"twitter:description")||"";
@@ -63,12 +107,12 @@ function extractProductInfo(html,baseUrl){
   .replace(/<(br|\/p|\/div|\/li|\/tr|\/h[1-6])\b[^>]*>/gi,"\n")
   .replace(/<[^>]+>/g," ")
  ).slice(0,6000);
- const images=productImageList(html,baseUrl,productNode);
+ const images=await productImageList(html,baseUrl,productNode);
  return {url:baseUrl,title:name||title,description:clean(description,1800),brand,price,currency,availability,sku,features,images,pageText};
 }
 app.get("/api/preview",async(req,res)=>{
  try{
-  const url=urlOf(req.query.url),html=await fetchPage(url),product=extractProductInfo(html,url);
+  const url=urlOf(req.query.url),html=await fetchPage(url),product=await extractProductInfo(html,url);
   productCache.set(url,{product,createdAt:Date.now()});
   res.json({ok:true,...product,images:product.images.slice(0,8)});
  }catch(e){res.status(422).json({error:e.message||"상품 정보를 읽지 못했습니다."});}
