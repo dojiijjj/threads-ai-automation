@@ -54,7 +54,7 @@ button:disabled{opacity:.5;cursor:wait}
 @media(max-width:520px){.tossDesktopViewport{height:620px}.embedFrame{height:620px}}
 
 </style>
-<script src="/app.js?v=24" defer></script>
+<script src="/app.js?v=25" defer></script>
 <script>
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
@@ -72,7 +72,7 @@ if ("serviceWorker" in navigator) {
 <input id="articleUrl" type="url" placeholder="기사 URL 붙여넣기">
 <label class="checkLine"><input id="articleImagesAuthorized" type="checkbox"><span>기사 사진 사용 권한 있음</span></label>
 <div class="actions"><button id="fetchArticle">기사 정보 가져오기</button><button id="randomArticle" class="secondary">랜덤 기사</button></div>
-<p class="muted">Google 뉴스, 연합뉴스, 다음뉴스, KBS 뉴스, 네이버 사회, 오마이뉴스, JTBC 중 하나를 같은 확률로 선택해. 해당 출처에서 찾지 못하면 정치·경제·사회·국제·IT·문화·생활·스포츠·환경 분야에서 Google 검색으로 다시 찾아.</p>
+<p class="muted">특정 언론사 목록 없이 Google 검색으로 직접 찾아. 정치·경제·사회·국제·IT·과학·문화·생활·스포츠·환경 등 9개 분야 중 하나를 같은 확률로 선택해.</p>
 <div id="message" role="status"></div>
 </div>
 
