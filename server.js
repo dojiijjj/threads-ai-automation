@@ -368,14 +368,135 @@ async function resolveNewsArticleUrl(raw,depth=0){
   throw e;
  }finally{clearTimeout(timer);}
 }
+
+const NEWS_SEARCH_CATEGORIES=[
+ {id:"politics",name:"정치·행정",query:"한국 정치 국회 정부 정책 행정"},
+ {id:"economy",name:"경제·금융",query:"한국 경제 금융 기업 산업 증시 물가 일자리"},
+ {id:"society",name:"사회·사건",query:"한국 사회 사건 사고 교육 노동 지역"},
+ {id:"world",name:"국제·외교",query:"국제 세계 외교 분쟁 각국 주요 이슈"},
+ {id:"tech-science",name:"IT·과학",query:"인공지능 IT 기술 과학 우주 연구"},
+ {id:"culture",name:"문화·연예",query:"문화 예술 영화 음악 방송 연예"},
+ {id:"life",name:"생활·소비",query:"생활 소비 유통 주거 교통 환경 건강"},
+ {id:"sports",name:"스포츠",query:"스포츠 축구 야구 농구 배구 선수 경기"},
+ {id:"environment",name:"환경·에너지",query:"기후 환경 에너지 전기차 배터리 재생에너지"}
+];
+function parseSearchJson(raw){
+ const text=String(raw||"").trim().replace(/^\x60{3}(?:json)?\s*/i,"").replace(/\s*\x60{3}$/,"");
+ try{return JSON.parse(text);}catch(_){}
+ const match=text.match(/\{[\s\S]*\}/);
+ if(!match)throw new Error("검색 결과를 기사 정보 형식으로 정리하지 못했습니다.");
+ return JSON.parse(match[0]);
+}
+async function searchRandomNewsFallback(){
+ if(!process.env.GEMINI_API_KEY)throw new Error("검색 기능에 GEMINI_API_KEY가 설정되어 있지 않습니다.");
+ const category=NEWS_SEARCH_CATEGORIES[require("crypto").randomInt(NEWS_SEARCH_CATEGORIES.length)];
+ const today=new Intl.DateTimeFormat("ko-KR",{timeZone:"Asia/Seoul",year:"numeric",month:"long",day:"numeric"}).format(new Date());
+ const prompt=[
+  "당신은 한국어 뉴스 검색 담당자입니다. 반드시 Google Search로 실제 웹 검색을 수행하고 검색 결과에 존재하는 기사만 골라 주세요.",
+  "오늘 날짜(대한민국): "+today,
+  "검색 분야: "+category.name+" ("+category.query+")",
+  "기간: 최근 7일 이내에 실제로 발행된 최신 뉴스. 최근 7일 기사가 부족하면 14일 이내까지 허용합니다.",
+  "한국 독자가 읽을 만한 실제 보도 기사를 찾아 주세요. 연예·스포츠·정치·경제·사회·국제·IT·과학·문화·생활·환경 등 분야 중 지정한 분야에 집중합니다.",
+  "가능하면 서로 다른 언론사의 기사 후보 5개를 제시합니다. 같은 사건의 중복 기사, 사설·칼럼·광고·보도자료·검색 결과 페이지·언론사 홈 화면은 제외합니다.",
+  "각 후보는 검색 결과에서 확인되는 구체적인 개별 기사 URL을 사용해야 합니다. URL, 제목, 언론사, 날짜를 절대로 지어내지 마세요. 실제 검색 결과에 없는 후보는 빼세요.",
+  "각 후보의 summary는 검색 결과와 실제 기사에서 확인할 수 있는 핵심 사실을 한국어로 독립적으로 요약합니다. 확인되지 않은 숫자, 발언, 인물, 장소, 전망을 추가하지 마세요. 가능한 한 400~1000자 안에서 기사 핵심과 맥락을 정리합니다.",
+  "출력은 JSON 객체만 반환합니다. 형식: {\"articles\":[{\"title\":\"기사 제목\",\"publisher\":\"언론사\",\"published\":\"YYYY-MM-DD\",\"author\":\"기자 또는 빈 문자열\",\"url\":\"개별 기사 URL\",\"summary\":\"기사의 사실 기반 요약\"}]}",
+  "검색 결과의 출처를 확인할 수 없는 후보는 넣지 마세요. 기사 후보가 1개뿐이면 1개만 반환해도 됩니다."
+ ].join("\n");
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),45000);
+ try{
+  const response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+MODELS[0]+":generateContent",{
+   method:"POST",
+   headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},
+   body:JSON.stringify({
+    contents:[{parts:[{text:prompt}]}],
+    tools:[{google_search:{}}],
+    generationConfig:{temperature:0.35,maxOutputTokens:6500}
+   }),
+   signal:controller.signal
+  });
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error("Google 검색 연결 오류 "+response.status+": "+(data.error?.message||"검색을 완료하지 못했습니다."));
+  const modelCandidate=data.candidates?.[0];
+  const grounding=modelCandidate?.groundingMetadata||modelCandidate?.grounding_metadata||{};
+  const chunks=Array.isArray(grounding.groundingChunks)?grounding.groundingChunks:[];
+  if(!chunks.some(x=>x.web?.uri))throw new Error("Google 검색 결과의 출처 링크를 확인하지 못했습니다.");
+  const raw=modelCandidate?.content?.parts?.map(p=>p.text||"").join("\n")||"";
+  const parsed=parseSearchJson(raw);
+  const rawList=Array.isArray(parsed.articles)?parsed.articles:(parsed.article?[parsed.article]:[]);
+  const candidates=rawList.map(item=>{
+   let url="";
+   try{
+    const u=new URL(urlOf(item.url||item.sourceUrl||""));
+    if(u.protocol!=="https:"||u.username||u.password)return null;
+    url=u.toString();
+   }catch(_){return null;}
+   const title=clean(item.title,300);
+   const publisher=clean(item.publisher||item.source,160);
+   const summary=clean(item.summary||item.description,5000);
+   if(!title||!publisher||summary.length<180)return null;
+   return {title,publisher,url,summary,author:clean(item.author,160),published:clean(item.published||item.date,80)};
+  }).filter(Boolean);
+  const unique=new Map();
+  for(const item of candidates)if(!unique.has(item.url))unique.set(item.url,item);
+  const verified=shuffleNewsItems([...unique.values()]);
+  if(!verified.length)throw new Error("검색에서 실제 기사 링크와 충분한 요약을 찾지 못했습니다.");
+  const picked=verified[0];
+  let articleUrl=picked.url,article=null;
+  try{
+   articleUrl=await resolveNewsArticleUrl(picked.url);
+   const html=await fetchPage(articleUrl);
+   const extracted=await extractArticleInfo(html,articleUrl,false);
+   if(extracted.body&&extracted.body.length>=250)article=extracted;
+  }catch(_){}
+  if(!article){
+   article={
+    url:articleUrl,
+    title:picked.title,
+    description:picked.summary.slice(0,1200),
+    body:picked.summary,
+    author:picked.author,
+    publisher:picked.publisher,
+    published:picked.published,
+    images:[],
+    bodySource:"web-search-summary",
+    bodySourceLabel:"Google 검색으로 찾은 기사 요약 (원문 본문 접근 제한)"
+   };
+  }else{
+   article.title=article.title||picked.title;
+   article.publisher=article.publisher||picked.publisher;
+   article.published=article.published||picked.published;
+   article.author=article.author||picked.author;
+   article.bodySource="full-article";
+   article.bodySourceLabel="검색으로 찾은 원문 기사 본문";
+  }
+  article.url=articleUrl;
+  article.searchCategory=category.name;
+  article.searchReferences=chunks.filter(x=>x.web?.uri).slice(0,6).map(x=>({title:clean(x.web.title,180),url:x.web.uri}));
+  articleCache.set(articleUrl,{article,createdAt:Date.now()});
+  for(const [id,item] of imageCache){if(Date.now()-item.createdAt>24*60*60*1000)imageCache.delete(id);}
+  const images=(article.images||[]).map(imageUrl=>{
+   const id=require("crypto").randomUUID();
+   imageCache.set(id,{source:imageUrl,referer:articleUrl,createdAt:Date.now()});
+   return "/media/"+id;
+  });
+  while(imageCache.size>500)imageCache.delete(imageCache.keys().next().value);
+  return {article,url:articleUrl,images,category:category.name};
+ }catch(e){
+  if(e.name==="AbortError")throw new Error("Google 검색 응답 시간이 초과됐습니다.");
+  throw e;
+ }finally{clearTimeout(timer);}
+}
+
 app.get("/api/random-article",async(req,res)=>{
  const selectedIndex=require("crypto").randomInt(RANDOM_NEWS_SOURCES.length);
  const source=RANDOM_NEWS_SOURCES[selectedIndex];
+ const allowUserAuthorized=["1","true","yes"].includes(String(req.query.imagesAuthorized||"").toLowerCase());
+ let sourceFailure="선택한 출처의 기사 목록을 확인하지 못했습니다.";
  try{
   const xml=await fetchNewsText(source.feed);
   const candidates=shuffleNewsItems(parseNewsFeed(xml)).slice(0,30);
   if(!candidates.length)throw new Error("선택된 출처에서 가져올 수 있는 기사 목록이 없습니다.");
-  const allowUserAuthorized=["1","true","yes"].includes(String(req.query.imagesAuthorized||"").toLowerCase());
   let lastError="본문 추출에 실패했습니다.";
   for(const candidate of candidates){
    let articleUrl=candidate.url;
@@ -389,16 +510,9 @@ app.get("/api/random-article",async(req,res)=>{
      const summary=clean(candidate.summary,5000);
      if(summary.length<120)throw pageError;
      article={
-      url:articleUrl,
-      title:candidate.title,
-      description:summary.slice(0,1200),
-      body:summary,
-      author:"",
-      publisher:source.name,
-      published:candidate.published||"",
-      images:[],
-      bodySource:"rss-summary",
-      bodySourceLabel:"언론사 RSS 요약 (원문 본문 접근 불가)"
+      url:articleUrl,title:candidate.title,description:summary.slice(0,1200),body:summary,
+      author:"",publisher:source.name,published:candidate.published||"",images:[],
+      bodySource:"rss-summary",bodySourceLabel:"언론사 RSS 요약 (원문 본문 접근 불가)"
      };
     }
     if(!article.title)article.title=candidate.title;
@@ -413,12 +527,27 @@ app.get("/api/random-article",async(req,res)=>{
      return "/media/"+id;
     });
     while(imageCache.size>500)imageCache.delete(imageCache.keys().next().value);
-    return res.json({ok:true,...article,url:articleUrl,images,sourceId:source.id,sourceName:source.name});
+    return res.json({ok:true,...article,url:articleUrl,images,sourceId:source.id,sourceName:source.name,searchFallback:false});
    }catch(e){lastError=e.message||String(e);}
   }
-  throw new Error("선택된 "+source.name+"에서 본문 또는 충분한 RSS 요약을 찾지 못했습니다. 출처는 다른 곳으로 바꾸지 않고 공정한 확률을 유지했어. 다시 눌러 줘. ("+lastError+")");
+  sourceFailure="선택된 "+source.name+"에서 기사 본문과 RSS 요약을 읽지 못했습니다. "+lastError;
  }catch(e){
-  res.status(422).json({error:e.message||"랜덤 기사를 가져오지 못했습니다.",sourceId:source.id,sourceName:source.name});
+  sourceFailure="선택된 "+source.name+"의 뉴스 목록을 가져오지 못했습니다. "+(e.message||String(e));
+ }
+ try{
+  const fallback=await searchRandomNewsFallback();
+  const article=fallback.article;
+  return res.json({
+   ok:true,...article,url:fallback.url,images:fallback.images,
+   sourceId:source.id,sourceName:"Google 검색",originalSourceName:source.name,
+   searchFallback:true,searchCategory:fallback.category,
+   searchReferences:article.searchReferences||[]
+  });
+ }catch(e){
+  return res.status(502).json({
+   error:sourceFailure+" Google 검색으로도 대체 기사를 찾지 못했습니다. "+(e.message||String(e)),
+   sourceId:source.id,sourceName:source.name,searchFallbackAttempted:true
+  });
  }
 });
 
@@ -447,7 +576,7 @@ app.post("/api/generate-article",async(req,res)=>{
   const cached=articleCache.get(url);
   if(!cached||Date.now()-cached.createdAt>30*60*1000)return res.status(409).json({error:"기사 정보가 만료됐습니다. 기사 링크를 먼저 가져와 주세요."});
   const article=cached.article;
-  const rssOnly=article.bodySource==="rss-summary";
+  const summaryOnly=["rss-summary","web-search-summary"].includes(article.bodySource);
   const prompt=[
    "역할: 당신은 한국어 뉴스 해설과 검색엔진 최적화에 능한 전문 블로거입니다.",
    "임무: 아래 원문 기사에서 확인되는 사실과 핵심 정보를 바탕으로 독자에게 도움이 되는 독립적인 정보성 블로그 글을 새로 작성합니다.",
@@ -459,8 +588,8 @@ app.post("/api/generate-article",async(req,res)=>{
    "기사 설명: "+article.description,
    "원문 링크: "+url,
    "기사 본문에서 추출한 참고 내용: "+article.body,
-   "자료 범위: "+(rssOnly?"현재 확보한 자료는 언론사 RSS 요약입니다. 기사 전문을 확인한 것처럼 말하지 말고, 요약에 없는 구체적 사실·발언·수치·배경을 만들어내지 마세요.":"현재 자료는 기사 본문에서 추출했습니다."),
-   "작성 분량: "+(rssOnly?"확인 가능한 내용에 맞춰 공백 포함 약 800자에서 1500자 사이로 작성합니다. 정보가 부족하면 억지로 늘리지 마세요.":"공백 포함 약 3000자에서 3800자 사이. 제목은 분량에서 제외합니다."),
+   "자료 범위: "+(article.bodySource==="web-search-summary"?"현재 자료는 Google 검색 결과로 확인한 기사 요약입니다. 기사 전문을 읽었다고 말하지 말고, 검색 요약과 확인 가능한 출처에 없는 사실·발언·수치·배경을 만들어내지 마세요.":"")+(article.bodySource==="rss-summary"?"현재 자료는 언론사 RSS 요약입니다. 기사 전문을 확인한 것처럼 말하지 말고, 요약에 없는 구체적 사실·발언·수치·배경을 만들어내지 마세요.":"")+(summaryOnly?"":"현재 자료는 기사 본문에서 추출했습니다."),
+   "작성 분량: "+(summaryOnly?"확인 가능한 내용에 맞춰 공백 포함 약 800자에서 1500자 사이로 작성합니다. 정보가 부족하면 억지로 늘리지 마세요.":"공백 포함 약 3000자에서 3800자 사이. 제목은 분량에서 제외합니다."),
    "검색 최적화: 기사 핵심 주제에 맞는 메인 키워드 1개와 서브 키워드 2개를 도출합니다. 메인 키워드는 제목 앞부분과 도입부 첫 2~3문장 안에 배치하고 본문에 자연스럽게 3~5회 사용합니다.",
    "구성: 사건이나 발표의 핵심 내용, 배경, 주요 사실, 관련 당사자와 영향, 독자가 알아야 할 점, 앞으로 확인할 쟁점을 자연스러운 순서로 설명합니다. 원문에 없는 사실이나 전망을 사실처럼 만들어내지 않습니다.",
    "분석: 기사에 명시된 사실과 작성자의 해석을 분명히 구분합니다. 해석이나 맥락이 필요하면 추론임을 분명히 밝히고, 근거가 없는 단정은 피합니다.",
