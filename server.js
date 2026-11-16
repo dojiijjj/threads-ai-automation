@@ -222,7 +222,7 @@ function isReusableArticleImageLicense(value){
  const text=licenseValue(value).toLowerCase();
  return /\bcc0\b|public[\s_-]*domain|creativecommons\.org\/publicdomain\/zero/i.test(text);
 }
-function collectLicensedArticleImageUrls(articleNode,scope,html){
+function collectLicensedArticleImageUrls(articleNode,scope,html,baseUrl){
  const urls=[];
  const articleLicense=articleNode?.license||meta(html,"license")||meta(html,"dcterms.rights")||meta(html,"rights")||"";
  const globalAllowed=isReusableArticleImageLicense(articleLicense);
@@ -231,7 +231,7 @@ function collectLicensedArticleImageUrls(articleNode,scope,html){
   const ownLicense=item&&typeof item==="object"?(item.license||item.usageTerms||item.rights||item.copyrightNotice||""):"";
   if(!src||(!globalAllowed&&!isReusableArticleImageLicense(ownLicense)))return;
   try{
-   const u=new URL(src,articleNode?.url||"https://example.invalid");
+   const u=new URL(src,baseUrl);
    if(["http:","https:"].includes(u.protocol)&&!u.username&&!u.password)urls.push(u.toString());
   }catch(_){}
  };
@@ -262,7 +262,7 @@ async function extractArticleInfo(html,baseUrl){
  const author=clean(typeof authorValue==="string"?authorValue:Array.isArray(authorValue)?authorValue.map(x=>x.name||"").filter(Boolean).join(", "):authorValue?.name||"",200);
  const publisher=clean(articleNode?.publisher?.name||new URL(baseUrl).hostname,160);
  const published=clean(articleNode?.datePublished||meta(html,"article:published_time")||meta(html,"date")||"",80);
- const licensedUrls=collectLicensedArticleImageUrls(articleNode,scope,html);
+ const licensedUrls=collectLicensedArticleImageUrls(articleNode,scope,html,baseUrl);
  const imageMarkup=licensedUrls.map(src=>'<img src="'+src.replace(/&/g,"&amp;").replace(/"/g,"&quot;")+'">').join("");
  const images=licensedUrls.length?await productImageList(imageMarkup,baseUrl,null,20,imageMarkup):[];
  return {url:baseUrl,title:title||"기사 요약",description,body,author,publisher,published,images};
