@@ -1,5 +1,5 @@
-const CACHE = "blog-writer-shell-v10";
-const SHELL = ["/", "/manifest.webmanifest", "/icon.svg", "/app.js?v=24"];
+const CACHE = "blog-writer-shell-v11";
+const SHELL = ["/", "/manifest.webmanifest", "/icon.svg", "/app.js?v=25"];
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
 });
