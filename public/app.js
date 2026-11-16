@@ -125,7 +125,13 @@ function renderArticle(){
 function articleText(){return $("articleEditor").innerText||$("articleEditor").textContent||"";}
 function articleHtml(){return $("articleEditor").innerHTML;}
 function tistoryHtml(){
- return '<div class="product-article">'+articleHtml()+"</div>";
+ let html=articleHtml()
+  .replace(/<p\\b([^>]*)>/gi,'<p$1 style="margin:0 !important;padding:0 !important;line-height:1.9 !important;">')
+  .replace(/<h2\\b([^>]*)>/gi,'<h2$1 style="display:block;margin:1.5em 0 1em 0 !important;line-height:1.5 !important;">')
+  .replace(/<figure\\b([^>]*)>/gi,'<figure$1 style="display:block;margin:1.3em 0 1.5em 0 !important;text-align:center;">')
+  .replace(/<img\\b([^>]*)>/gi,'<img$1 style="max-width:100%;height:auto;display:block;margin:0 auto;">')
+  .replace(/<\\/p>\\s*(?=<p\\b)/gi,"</p><br><br>");
+ return '<div class="product-article" style="line-height:1.9;">'+html+"</div>";
 }
 async function copyRichHtml(){
  // Copy literal HTML source: mobile clipboard can drop the text/html clipboard format.
