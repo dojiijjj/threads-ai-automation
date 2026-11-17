@@ -61,7 +61,7 @@ function makeImageFigure(url){
  const figure=document.createElement("figure");
  figure.className="articleImage";
  const img=document.createElement("img");
- img.src=url;img.alt=contentMode==="article"?"기사 사진":"상품 대표 이미지";img.loading="lazy";
+ img.src=url;img.alt=contentMode==="product"?"상품 대표 이미지":contentMode==="article"?"기사 사진":"생활 정보 참고 이미지";img.loading="lazy";
  img.onerror=()=>figure.remove();
  figure.appendChild(img);
  return figure;
@@ -170,6 +170,24 @@ function renderArticle(){
   link.target="_blank";link.rel="noopener noreferrer";
   source.append(label,link);editor.appendChild(source);
  }
+
+ if((contentMode==="tips"||contentMode==="health")&&Array.isArray(resultData.sources)&&resultData.sources.length){
+  const heading=document.createElement("h2");
+  heading.textContent="참고자료";
+  editor.appendChild(heading);
+  resultData.sources.slice(0,8).forEach(source=>{
+   if(!source||!/^https?:\/\//i.test(String(source.url||"")))return;
+   const p=document.createElement("p");
+   const link=document.createElement("a");
+   link.href=source.url;
+   link.textContent=source.title||source.url;
+   link.target="_blank";
+   link.rel="noopener noreferrer";
+   p.appendChild(link);
+   editor.appendChild(p);
+  });
+ }
+
  if(hashtagBlock){
   const tags=document.createElement("p");tags.className="hashtags";tags.textContent=hashtagBlock;
   editor.appendChild(tags);
@@ -279,6 +297,49 @@ $("generateArticle").onclick=async()=>{
  }catch(e){msg("기사 글 생성 실패: "+e.message);}
  finally{button.disabled=false;}
 };
+
+
+function openCategoryPanel(category){
+ $("lifeTipsPanel").classList.toggle("hidden",category!=="tips");
+ $("healthyLifePanel").classList.toggle("hidden",category!=="health");
+ const field=$(category==="tips"?"lifeTipsTopic":"healthyLifeTopic");
+ field.focus();
+}
+$("showLifeTips").onclick=()=>openCategoryPanel("tips");
+$("showHealthyLife").onclick=()=>openCategoryPanel("health");
+async function generateCategoryContent(category){
+ const field=$(category==="tips"?"lifeTipsTopic":"healthyLifeTopic");
+ const button=$(category==="tips"?"generateLifeTips":"generateHealthyLife");
+ const topic=field.value.trim();
+ if(!topic){msg("작성할 주제를 입력해 줘.");field.focus();return;}
+ button.disabled=true;
+ $("productPanel").classList.add("hidden");
+ $("articlePanel").classList.add("hidden");
+ $("result").classList.add("hidden");
+ resultData=null;foundImages=[];currentShareUrl="";
+ contentMode=category;
+ msg(category==="health"?"공신력 있는 건강 자료를 검색하고 글을 작성 중...":"생활 정보와 참고 자료를 검색하고 글을 작성 중...");
+ try{
+  resultData=await api("/api/generate-lifestyle",{method:"POST",body:JSON.stringify({category,topic})});
+  const imageData=await api("/api/images",{method:"POST",body:JSON.stringify({queries:resultData.imageQueries||[topic]})}).catch(()=>({images:[]}));
+  const licensedImages=(imageData.images||[]).filter(item=>item&&item.thumbUrl);
+  foundImages=licensedImages.slice(0,5).map(item=>new URL(item.thumbUrl,location.origin).toString());
+  resultData.imageCredits=licensedImages.map(item=>({title:item.title,sourceUrl:item.sourceUrl,license:item.license}));
+  $("title").value=resultData.title||"";
+  renderArticle();
+  $("result").classList.remove("hidden");
+  const sourceCount=(resultData.sources||[]).length;
+  const imageCount=foundImages.length;
+  msg("완료. "+(category==="health"?"건강한 삶":"생활 속 꿀팁 & 리뷰")+" 글을 생성했어. 참고자료 "+sourceCount+"개, 사용 가능한 사진 "+imageCount+"장을 확인했어.");
+ }catch(e){
+  msg("글 생성 실패: "+e.message);
+ }finally{
+  button.disabled=false;
+ }
+}
+$("generateLifeTips").onclick=()=>generateCategoryContent("tips");
+$("generateHealthyLife").onclick=()=>generateCategoryContent("health");
+
 
 $("downloadCoverPhoto").onclick=downloadCoverPhoto;
 
