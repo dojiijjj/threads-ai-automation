@@ -368,8 +368,7 @@ app.post("/api/generate-article",async(req,res)=>{
      const message=data.error?.message||("Gemini 오류 "+response.status);
      lastError=model+" / "+response.status+" / "+message;
      if([400,401,403].includes(response.status))return res.status(response.status).json({error:lastError});
-      if(response.status===429)return res.status(429).json({error:"Gemini API 사용 한도에 도달했어. Google 검색 연동은 무료 API에서 제외하고 다시 구성했지만, 모델 자체의 분당·일일 요청 한도나 결제 한도까지 초과한 경우에는 AI Studio의 사용량/요금제 한도를 확인해야 해. 잠시 후 다시 시도해 줘."});
-    if(![404,500,502,503,504].includes(response.status))return res.status(502).json({error:lastError});
+      if(![404,429,500,502,503,504].includes(response.status))return res.status(502).json({error:lastError});
       if(attempt===0)await pause(1500);
      }catch(e){
       clearTimeout(timer);
@@ -684,7 +683,8 @@ app.post("/api/generate-lifestyle",async(req,res)=>{
     const message=data.error?.message||("Gemini 오류 "+response.status);
     lastError=model+" / "+response.status+" / "+message;
     if([400,401,403].includes(response.status))return res.status(response.status).json({error:lastError});
-    if(![404,429,500,502,503,504].includes(response.status))return res.status(502).json({error:lastError});
+    if(response.status===429)return res.status(429).json({error:"Gemini API 사용 한도에 도달했어. Google 검색 연동은 무료 API에서 제외하고 다시 구성했지만, 모델 자체의 분당·일일 요청 한도나 결제 한도까지 초과한 경우에는 AI Studio의 사용량/요금제 한도를 확인해야 해. 잠시 후 다시 시도해 줘."});
+    if(![404,500,502,503,504].includes(response.status))return res.status(502).json({error:lastError});
     if(attempt===0)await pause(1500);
    }catch(e){
     clearTimeout(timer);
