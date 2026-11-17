@@ -66,6 +66,58 @@ function makeImageFigure(url){
  figure.appendChild(img);
  return figure;
 }
+function renderCoverPhoto(){
+ const panel=$("coverPhotoPanel");
+ const image=$("coverPhoto");
+ const button=$("downloadCoverPhoto");
+ const url=foundImages[0]||"";
+ if(!url){
+  panel.classList.add("hidden");
+  image.removeAttribute("src");
+  button.disabled=true;
+  return;
+ }
+ image.src=url;
+ image.alt="블로그 대표 사진";
+ image.onerror=()=>{
+  panel.classList.add("hidden");
+  button.disabled=true;
+ };
+ button.disabled=false;
+ panel.classList.remove("hidden");
+}
+async function downloadCoverPhoto(){
+ const url=foundImages[0];
+ if(!url){msg("다운로드할 대표 사진이 없어.");return;}
+ const button=$("downloadCoverPhoto");
+ button.disabled=true;
+ try{
+  const response=await fetch(url,{cache:"no-store"});
+  if(!response.ok)throw new Error("이미지를 가져오지 못했어. ("+response.status+")");
+  const blob=await response.blob();
+  if(!blob.type.startsWith("image/"))throw new Error("다운로드한 파일이 이미지가 아니야.");
+  const extensions={"image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif","image/avif":"avif","image/svg+xml":"svg"};
+  const extension=extensions[blob.type.split(";")[0].toLowerCase()]||"jpg";
+  const base=String($("title").value||"blog-cover")
+   .replace(/[\\/:*?"<>|]/g," ")
+   .trim()
+   .replace(/\\s+/g,"-")
+   .slice(0,70)||"blog-cover";
+  const objectUrl=URL.createObjectURL(blob);
+  const link=document.createElement("a");
+  link.href=objectUrl;
+  link.download=base+"."+extension;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(()=>URL.revokeObjectURL(objectUrl),1500);
+  msg("블로그 대표 사진을 다운로드했어.");
+ }catch(e){
+  msg("대표 사진 다운로드 실패: "+e.message);
+ }finally{
+  button.disabled=false;
+ }
+}
 const SHARE_DISCLOSURE="이 포스팅은 토스쇼핑 쉐어링크 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.";
 function addShareDisclosure(editor){
  const p=document.createElement("p");
@@ -82,7 +134,8 @@ function addShareDisclosure(editor){
 function renderArticle(){
  const editor=$("articleEditor");
  editor.replaceChildren();
- if(!resultData)return;
+ if(!resultData){renderCoverPhoto();return;}
+ renderCoverPhoto();
  if(contentMode==="product")addShareDisclosure(editor);
  const blocks=String(resultData.body||"").trim().split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean);
  const hashtagBlock=blocks.length&&blocks[blocks.length-1].startsWith("#")?blocks.pop():"";
@@ -226,6 +279,8 @@ $("generateArticle").onclick=async()=>{
  }catch(e){msg("기사 글 생성 실패: "+e.message);}
  finally{button.disabled=false;}
 };
+
+$("downloadCoverPhoto").onclick=downloadCoverPhoto;
 
 $("copyHtml").onclick=async()=>{
  if(!resultData||!articleText().trim()){msg("먼저 글을 생성해 줘.");return;}
