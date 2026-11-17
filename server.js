@@ -605,7 +605,7 @@ app.post("/api/generate-lifestyle",async(req,res)=>{
      body:JSON.stringify({
       contents:[{parts:[{text:prompt}]}],
       tools:[{google_search:{}}],
-      generationConfig:{temperature:0.7,maxOutputTokens:7000,responseMimeType:"application/json",thinkingConfig:{thinkingLevel}}
+      generationConfig:{temperature:0.7,maxOutputTokens:7000,thinkingConfig:{thinkingLevel}}
      }),
      signal:controller.signal
     });
@@ -613,7 +613,9 @@ app.post("/api/generate-lifestyle",async(req,res)=>{
     clearTimeout(timer);timer=null;
     if(response.ok){
      const raw=data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("").trim()||"";
-     const result=JSON.parse(raw);
+     const cleanedRaw=raw.replace(/^\s*```(?:json)?\s*/i,"").replace(/\s*```\s*$/,"").trim();
+     let result;
+     try{result=JSON.parse(cleanedRaw);}catch(_){const first=cleanedRaw.indexOf("{"),last=cleanedRaw.lastIndexOf("}");if(first<0||last<=first)throw new Error("AI 응답이 JSON 형식이 아닙니다.");result=JSON.parse(cleanedRaw.slice(first,last+1));}
      if(!result.title||!result.body)throw new Error("AI 결과에 제목 또는 본문이 없습니다.");
      result.title=cleanBlogText(result.title);
      result.body=formatBlogParagraphs(cleanBlogText(result.body));
