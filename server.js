@@ -368,7 +368,8 @@ app.post("/api/generate-article",async(req,res)=>{
      const message=data.error?.message||("Gemini 오류 "+response.status);
      lastError=model+" / "+response.status+" / "+message;
      if([400,401,403].includes(response.status))return res.status(response.status).json({error:lastError});
-      if(![404,429,500,502,503,504].includes(response.status))return res.status(502).json({error:lastError});
+      if(response.status===429)return res.status(429).json({error:"Gemini API 사용 한도에 도달했어. Google 검색 연동은 무료 API에서 제외하고 다시 구성했지만, 모델 자체의 분당·일일 요청 한도나 결제 한도까지 초과한 경우에는 AI Studio의 사용량/요금제 한도를 확인해야 해. 잠시 후 다시 시도해 줘."});
+    if(![404,500,502,503,504].includes(response.status))return res.status(502).json({error:lastError});
       if(attempt===0)await pause(1500);
      }catch(e){
       clearTimeout(timer);
@@ -540,13 +541,50 @@ app.post("/api/generate",async(req,res)=>{
  }catch(e){return res.status(422).json({error:"상품 링크에서 정보를 가져오지 못했습니다: "+e.message});}
 });
 
+function autoLifestyleTopic(category){
+ const month=Number(new Intl.DateTimeFormat("en-US",{timeZone:"Asia/Seoul",month:"numeric"}).format(new Date()));
+ const seasonalTips={
+  12:["겨울철 난방비를 줄이는 보일러 설정과 집안 단열 관리법","창문 결로와 곰팡이를 줄이는 겨울철 환기 및 습도 관리","겨울철 실내 빨래 냄새와 건조 시간을 줄이는 방법","연말 전기요금 부담을 낮추는 대기전력과 난방기기 사용 습관"],
+  1:["한파 때 수도 동파를 예방하는 집안 관리법","겨울철 난방비 아끼는 보일러 설정과 단열 팁","겨울철 정전기를 줄이는 옷과 실내 환경 관리법","추운 날 실내 결로와 곰팡이를 줄이는 환기 습관"],
+  2:["환절기 옷장과 침구를 쾌적하게 관리하는 방법","겨울에서 봄으로 넘어갈 때 집안 곰팡이를 예방하는 법","봄맞이 대청소 전에 알아두면 좋은 세제와 청소 순서"],
+  3:["황사와 미세먼지가 심한 날 실내 청소와 환기 관리법","봄철 옷장 습기와 냄새를 줄이는 정리 방법","이사와 새학기 시즌 생활비를 줄이는 소비 습관"],
+  4:["봄철 꽃가루와 미세먼지 시기 실내 먼지 관리법","옷장과 침구를 교체하는 봄맞이 세탁 및 보관 팁","나들이와 여행 전 알아두면 좋은 생활 안전 점검"],
+  5:["초여름 식중독을 예방하는 냉장고 식재료 보관법","여름 전 에어컨 전기요금을 줄이는 필터와 사용 관리","습해지는 계절 욕실 곰팡이와 냄새를 줄이는 방법"],
+  6:["장마철 빨래 냄새와 실내 습기를 줄이는 현실적인 방법","여름철 냉장고 온도와 식품 보관 안전 점검","에어컨 전기요금과 실내 냉방 효율을 높이는 사용 습관"],
+  7:["폭염 속 전기요금을 줄이는 에어컨 사용 습관","여름철 음식 변질과 식중독을 예방하는 보관법","장마 뒤 눅눅한 집안과 신발장 냄새 관리법"],
+  8:["폭염과 열대야에 대비하는 집안 냉방 및 절전 습관","여름철 곰팡이와 진드기를 줄이는 침구 관리법","휴가철 택배·예약 사칭 문자와 온라인 사기 예방법"],
+  9:["환절기 옷과 침구를 정리하고 보관하는 방법","명절 전후 생활비와 식재료 낭비를 줄이는 정리법","가을철 실내 환기와 집먼지 관리 습관"],
+  10:["일교차가 커지는 시기 집안 환기와 난방 준비법","가을철 건조한 날 정전기와 피부 건조를 줄이는 생활 습관","겨울을 앞두고 난방비를 줄이는 창문 단열 점검"],
+  11:["2026년 겨울 난방비를 아끼는 보일러 설정과 단열 관리법","겨울철 창문 결로와 곰팡이를 줄이는 환기 및 습도 관리법","택배·공공기관 사칭 문자와 AI 보이스피싱을 구별하는 생활 보안 습관","전기요금 부담을 줄이는 대기전력과 난방기기 사용 습관","김장철 식재료를 신선하게 보관하는 냉장고 정리법"]
+ };
+ const seasonalHealth={
+  12:["겨울철 혈관 건강을 지키는 일상 속 걷기와 체온 관리","독감과 호흡기 감염병 유행 시기에 알아둘 예방 습관","겨울철 수면 리듬과 아침 피로를 관리하는 생활 방법"],
+  1:["한파가 심할 때 혈압과 혈관 건강을 위해 주의할 생활 습관","겨울철 독감과 호흡기 감염병 예방을 위한 기본 수칙","추운 날씨에 실내 생활이 늘 때 운동량을 유지하는 방법"],
+  2:["환절기 수면 변화와 피로를 관리하는 생활 습관","겨울철 줄어든 활동량을 회복하는 걷기와 근력 운동"],
+  3:["미세먼지와 황사가 심한 날 호흡기 건강을 지키는 방법","봄철 알레르기 증상과 생활환경 관리에서 알아둘 점"],
+  4:["봄철 꽃가루 알레르기와 실내 공기 관리 방법","일상에서 실천하는 혈당 관리와 균형 잡힌 아침 식사"],
+  5:["초여름 식중독 예방과 안전한 식품 보관 습관","낮이 길어지는 시기 수면 리듬을 지키는 방법"],
+  6:["장마철 실내 활동이 늘 때 챙길 걷기와 근력 운동","더운 날 탈수를 예방하는 수분 섭취와 건강 신호"],
+  7:["폭염 속 온열질환을 예방하는 수분 섭취와 활동 수칙","여름철 수면의 질을 지키는 실내 온도와 생활 습관"],
+  8:["열대야가 이어질 때 수면의 질을 높이는 생활 관리","폭염 시 어지럼증과 탈수 등 온열질환 경고 신호 알아보기"],
+  9:["환절기 호흡기 건강을 지키는 손 씻기와 환기 습관","일교차가 클 때 혈압과 혈관 건강을 관리하는 방법"],
+  10:["가을철 일교차와 혈관 건강을 위해 알아둘 생활 습관","중년 이후 근육량을 지키는 걷기와 근력 운동"],
+  11:["일교차 큰 초겨울 혈관 건강을 위한 체온·운동 관리","독감·호흡기 감염병 유행 시기 예방접종과 생활 수칙","겨울철 햇빛 노출과 비타민 D에 관해 알아둘 건강 정보","추운 날씨에 실내 생활이 늘 때 혈당과 체중 관리하는 법"]
+ };
+ const commonTips=["AI 음성 사칭과 보이스피싱을 구별하는 가족 보안 약속","구독 서비스와 자동결제를 점검해 고정지출 줄이는 방법","개인정보 유출을 줄이는 스마트폰 앱 권한과 계정 보안 점검","중고거래와 온라인 쇼핑 사기를 피하기 위한 결제 전 확인 사항"];
+ const commonHealth=["혈당 관리를 돕는 균형 잡힌 식사 구성과 식사 순서","중년 이후 근육량 감소를 늦추는 단백질 섭취와 근력 운동","수면 부족이 집중력과 식욕에 미치는 영향 및 수면 습관","건강검진 결과를 볼 때 혈압·혈당·콜레스테롤에서 확인할 점"];
+ const seasonal=category==="health"?seasonalHealth:seasonalTips;
+ const pool=[...(seasonal[month]||[]),...(category==="health"?commonHealth:commonTips)];
+ return pool[Math.floor(Math.random()*pool.length)];
+}
+
 function lifestyleTopicPrompt(category,topic){
  const shared=[
   "너는 한국어 티스토리 생활 정보 블로그의 전문 편집자다.",
   "참고 스타일은 검색자의 고민으로 시작해 친근하게 설명하고, 원인과 배경을 쉽게 풀며, 바로 실행할 수 있는 방법과 체크 포인트를 충분히 제공하는 실용형 장문 포스팅이다.",
   "특정 블로그의 문장이나 표현을 복사하지 말고, 콘텐츠 구성과 정보 전달 방식만 새롭게 구현한다.",
   "주제: "+topic,
-  "Google 검색으로 최신 정보와 신뢰할 만한 근거를 먼저 확인하고, 검색에서 확인되지 않은 수치나 사실을 지어내지 않는다.",
+  "실시간 웹 검색 결과를 받지 않는 작성 모드다. 최근 뉴스의 구체적인 사실·날짜·통계·정책을 확인한 것처럼 단정하지 말고, 계절과 생활 변화에 맞는 실용 정보를 작성한다. 정확성이 중요한 건강·안전 정보는 공신력 있는 기관의 일반적으로 확립된 지식 범위에서만 설명하고, 불확실하면 단정하지 않는다.",
   "검색 의도에 맞는 메인 키워드 1개와 연관 키워드 2개를 정하고, 메인 키워드를 제목 앞부분과 도입부 초반에 자연스럽게 사용한다.",
   "제목은 검색자가 얻을 정보를 구체적으로 드러내고, 과장·공포 조장·낚시성 표현은 사용하지 않는다.",
   "본문은 공백 포함 약 3000자에서 3800자 사이로 작성한다. 정보가 부족하면 억지로 분량을 늘리지 말고 정확성을 우선한다.",
@@ -580,7 +618,7 @@ function lifestyleTopicPrompt(category,topic){
   "특정 음식이나 영양제의 치료·예방 효과를 과장하지 않는다. 근거가 불충분한 민간요법, 해독, 기적의 식품, 단기간 완치 주장을 권하지 않는다.",
   "진단하거나 개인별 치료를 지시하지 않는다. 약 복용을 중단·변경하라고 말하지 않는다. 질환이 있거나 임신·수유 중이거나 약을 복용하는 사람은 의료진과 상담해야 할 상황을 분명히 알린다.",
   "건강 관련 숫자, 권장량, 기준치, 발병 위험, 효과 크기는 검색된 신뢰 가능한 자료가 뒷받침할 때만 정확한 조건과 함께 사용한다. 기준이나 국가에 따라 다르면 차이를 설명한다.",
-  "마지막에는 오늘부터 적용할 수 있는 현실적인 생활 체크리스트와 과장 없는 결론을 제시한다. 참고자료는 실제 Google 검색 grounding 결과에 잡힌 출처만 프로그램이 별도로 표시한다."
+  "마지막에는 오늘부터 적용할 수 있는 현실적인 생활 체크리스트와 과장 없는 결론을 제시한다. 확인되지 않은 논문·기관명·참고 링크를 만들어내지 않는다."
  ];
  return [...shared,...(category==="health"?health:tips)].join("\n");
 }
@@ -588,8 +626,7 @@ app.post("/api/generate-lifestyle",async(req,res)=>{
  if(!process.env.GEMINI_API_KEY)return res.status(503).json({error:"Railway 환경변수 GEMINI_API_KEY가 필요합니다."});
  const category=String(req.body.category||"");
  if(!["tips","health"].includes(category))return res.status(400).json({error:"콘텐츠 유형을 확인해 주세요."});
- const topic=clean(req.body.topic,240);
- if(!topic)return res.status(400).json({error:"작성할 주제를 입력해 주세요."});
+ const topic=autoLifestyleTopic(category);
  const prompt=lifestyleTopicPrompt(category,topic);
  let lastError="응답 없음";
  for(const model of MODELS){
@@ -604,7 +641,6 @@ app.post("/api/generate-lifestyle",async(req,res)=>{
      headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},
      body:JSON.stringify({
       contents:[{parts:[{text:prompt}]}],
-      tools:[{google_search:{}}],
       generationConfig:{temperature:0.7,maxOutputTokens:7000,thinkingConfig:{thinkingLevel}}
      }),
      signal:controller.signal
@@ -643,7 +679,7 @@ app.post("/api/generate-lifestyle",async(req,res)=>{
       if(!sourceMap.has(uri))sourceMap.set(uri,{title:clean(chunk.web.title||new URL(uri).hostname,140),url:uri});
      }
      const sources=[...sourceMap.values()].slice(0,8);
-     return res.json({category,topic,...result,sources,model});
+     return res.json({category,topic,...result,sources:[],model});
     }
     const message=data.error?.message||("Gemini 오류 "+response.status);
     lastError=model+" / "+response.status+" / "+message;
