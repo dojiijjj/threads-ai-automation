@@ -299,47 +299,34 @@ $("generateArticle").onclick=async()=>{
 };
 
 
-function openCategoryPanel(category){
- $("lifeTipsPanel").classList.toggle("hidden",category!=="tips");
- $("healthyLifePanel").classList.toggle("hidden",category!=="health");
- const field=$(category==="tips"?"lifeTipsTopic":"healthyLifeTopic");
- field.focus();
-}
-$("showLifeTips").onclick=()=>openCategoryPanel("tips");
-$("showHealthyLife").onclick=()=>openCategoryPanel("health");
 async function generateCategoryContent(category){
- const field=$(category==="tips"?"lifeTipsTopic":"healthyLifeTopic");
- const button=$(category==="tips"?"generateLifeTips":"generateHealthyLife");
- const topic=field.value.trim();
- if(!topic){msg("작성할 주제를 입력해 줘.");field.focus();return;}
+ const button=$(category==="tips"?"showLifeTips":"showHealthyLife");
  button.disabled=true;
  $("productPanel").classList.add("hidden");
  $("articlePanel").classList.add("hidden");
  $("result").classList.add("hidden");
  resultData=null;foundImages=[];currentShareUrl="";
  contentMode=category;
- msg(category==="health"?"공신력 있는 건강 자료를 검색하고 글을 작성 중...":"생활 정보와 참고 자료를 검색하고 글을 작성 중...");
+ msg(category==="health"?"요즘 건강 이슈 중 주제를 자동으로 골라 글을 작성 중...":"요즘 생활 이슈 중 주제를 자동으로 골라 글을 작성 중...");
  try{
-  resultData=await api("/api/generate-lifestyle",{method:"POST",body:JSON.stringify({category,topic})});
-  const imageData=await api("/api/images",{method:"POST",body:JSON.stringify({queries:resultData.imageQueries||[topic]})}).catch(()=>({images:[]}));
+  resultData=await api("/api/generate-lifestyle",{method:"POST",body:JSON.stringify({category})});
+  const imageData=await api("/api/images",{method:"POST",body:JSON.stringify({queries:resultData.imageQueries||[resultData.topic]})}).catch(()=>({images:[]}));
   const licensedImages=(imageData.images||[]).filter(item=>item&&item.thumbUrl);
   foundImages=licensedImages.slice(0,5).map(item=>new URL(item.thumbUrl,location.origin).toString());
   resultData.imageCredits=licensedImages.map(item=>({title:item.title,sourceUrl:item.sourceUrl,license:item.license}));
   $("title").value=resultData.title||"";
   renderArticle();
   $("result").classList.remove("hidden");
-  const sourceCount=(resultData.sources||[]).length;
   const imageCount=foundImages.length;
-  msg("완료. "+(category==="health"?"건강한 삶":"생활 속 꿀팁 & 리뷰")+" 글을 생성했어. 참고자료 "+sourceCount+"개, 사용 가능한 사진 "+imageCount+"장을 확인했어.");
+  msg("완료. 자동 선택한 주제: "+(resultData.topic||"생활 정보")+". 관련 사진 "+imageCount+"장을 확인했어.");
  }catch(e){
   msg("글 생성 실패: "+e.message);
  }finally{
   button.disabled=false;
  }
 }
-$("generateLifeTips").onclick=()=>generateCategoryContent("tips");
-$("generateHealthyLife").onclick=()=>generateCategoryContent("health");
-
+$("showLifeTips").onclick=()=>generateCategoryContent("tips");
+$("showHealthyLife").onclick=()=>generateCategoryContent("health");
 
 $("downloadCoverPhoto").onclick=downloadCoverPhoto;
 
