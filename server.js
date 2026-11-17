@@ -539,5 +539,129 @@ app.post("/api/generate",async(req,res)=>{
   }catch(e){return res.status(502).json({error:e.message||"글 생성 중 오류가 발생했습니다."});}
  }catch(e){return res.status(422).json({error:"상품 링크에서 정보를 가져오지 못했습니다: "+e.message});}
 });
+
+function lifestyleTopicPrompt(category,topic){
+ const shared=[
+  "너는 한국어 티스토리 생활 정보 블로그의 전문 편집자다.",
+  "참고 스타일은 검색자의 고민으로 시작해 친근하게 설명하고, 원인과 배경을 쉽게 풀며, 바로 실행할 수 있는 방법과 체크 포인트를 충분히 제공하는 실용형 장문 포스팅이다.",
+  "특정 블로그의 문장이나 표현을 복사하지 말고, 콘텐츠 구성과 정보 전달 방식만 새롭게 구현한다.",
+  "주제: "+topic,
+  "Google 검색으로 최신 정보와 신뢰할 만한 근거를 먼저 확인하고, 검색에서 확인되지 않은 수치나 사실을 지어내지 않는다.",
+  "검색 의도에 맞는 메인 키워드 1개와 연관 키워드 2개를 정하고, 메인 키워드를 제목 앞부분과 도입부 초반에 자연스럽게 사용한다.",
+  "제목은 검색자가 얻을 정보를 구체적으로 드러내고, 과장·공포 조장·낚시성 표현은 사용하지 않는다.",
+  "본문은 공백 포함 약 3000자에서 3800자 사이로 작성한다. 정보가 부족하면 억지로 분량을 늘리지 말고 정확성을 우선한다.",
+  "도입부는 일상에서 겪는 구체적인 고민이나 궁금증으로 시작하고, 이 글에서 무엇을 알 수 있는지 알려준다.",
+  "목차 또는 핵심 안내를 짧게 제시한 다음, 의미 있는 소제목으로 내용을 나누어 읽기 쉽게 전개한다.",
+  "모든 문장은 한 문장씩 별도 문단으로 분리한다. 문장이 끝나면 빈 줄을 하나 둔다. 소제목은 단독 줄로 쓰고 위아래에 빈 줄을 둔다.",
+  "문체는 부담 없는 자연스러운 한국어 존댓말이다. 독자에게 설명하듯 부드럽게 쓰되, 같은 접속어나 결론 표현을 반복하지 않는다.",
+  "본문에 마크다운 문법, 표 파이프 문자, 별표, 이모지, 장식용 구분선, HTML 태그, 해시태그를 넣지 않는다. 목록 기호 대신 짧은 소제목과 문단으로 정리한다.",
+  "본문에는 사진 URL이나 사진 자리표시자를 넣지 않는다. 사진은 프로그램이 별도로 배치한다.",
+  "마지막에는 핵심 정리와 주제에 맞는 자주 묻는 질문 3~4개를 포함한다.",
+  "실제 체험 사실을 제공받지 않았다면 직접 써봤다거나 구매했다는 1인칭 후기를 꾸며내지 않는다.",
+  "서로 겹치지 않는 검색형 해시태그 20개를 # 없이 배열로 만든다.",
+  "주제와 어울리는 Wikimedia Commons 검색어 3개를 imageQueries 배열로 만든다. 이미지 검색어는 사물·장소·행동이 구체적으로 드러나게 작성한다.",
+  "출력은 유효한 JSON 객체 하나만 허용한다. 키는 keywords(문자열 3개 배열), title(문자열), body(문자열), hashtags(문자열 배열 20개), imageQueries(문자열 배열 3개)다. JSON 외 설명은 출력하지 않는다."
+ ];
+ const tips=[
+  "카테고리: 생활 속 꿀팁 & 리뷰.",
+  "글의 중심은 생활 문제 해결이다. 청소, 정리, 냄새, 세탁, 주방, 살림, 절약, 계절별 관리, 생활용품 선택처럼 독자가 일상에서 바로 활용할 주제를 다룬다.",
+  "구성 순서: 독자가 겪는 문제와 공감되는 상황, 문제가 생기는 이유, 해결 전에 알아둘 점, 실행 순서가 분명한 실천 방법, 상황별 대안과 선택 기준, 놓치기 쉬운 주의사항, 한눈에 정리, 자주 묻는 질문.",
+  "방법은 독자가 실제로 따라 할 수 있도록 준비물, 순서, 시간이나 빈도처럼 확인 가능한 정보를 구체적으로 안내한다. 수치나 효과는 검색에서 확인되는 근거가 있을 때만 쓴다.",
+  "필요하면 방법이나 제품 선택 기준을 비교하되, 실제 확인한 근거가 없는 가격·성능·평점·순위·후기를 만들지 않는다. 상품을 주제로 하더라도 제휴 홍보 문구나 구매 유도 문장을 넣지 않는다.",
+  "청소·세제·전기·가전·식품 등 안전과 관련된 주제는 공식 기관 또는 제조사 안내를 우선하며, 위험한 혼합·사용법을 권하지 않는다.",
+  "검색 결과를 바탕으로 실용적인 팁을 제시하되, 개인적 경험처럼 꾸며 쓰지 않는다. 독자가 자기 상황에 맞게 선택할 수 있는 판단 기준을 제공한다."
+ ];
+ const health=[
+  "카테고리: 건강한 삶.",
+  "글의 중심은 일상 건강 관리와 예방 중심의 생활 정보다. 중년 이후 건강 변화, 식습관, 혈당·혈관 건강, 수면, 뇌 건강, 운동, 영양, 피로 관리 등 주제에 맞는 실천 정보를 다룬다.",
+  "질병관리청, 국가건강정보포털, 식품의약품안전처, WHO, CDC, NIH, NHS, 전문 학회와 동료심사 논문 등 공신력 있는 자료를 우선 검색한다. 검색 자료의 내용과 한계를 확인해 서로 다른 근거를 구분한다.",
+  "구성 순서: 독자가 느끼는 변화나 고민, 주제의 핵심 개념과 몸에서 일어나는 원리, 관련 위험 요인이나 오해, 근거가 확인된 식사·운동·수면 등 생활 관리법, 일상에서 적용할 루틴이나 체크리스트, 주의가 필요한 사람, 자주 묻는 질문.",
+  "건강 용어는 일반 독자가 이해하도록 쉽게 설명한다. 연구 결과의 상관관계를 인과관계처럼 쓰지 말고, 동물·세포 실험을 사람에게 입증된 효과처럼 표현하지 않는다.",
+  "특정 음식이나 영양제의 치료·예방 효과를 과장하지 않는다. 근거가 불충분한 민간요법, 해독, 기적의 식품, 단기간 완치 주장을 권하지 않는다.",
+  "진단하거나 개인별 치료를 지시하지 않는다. 약 복용을 중단·변경하라고 말하지 않는다. 질환이 있거나 임신·수유 중이거나 약을 복용하는 사람은 의료진과 상담해야 할 상황을 분명히 알린다.",
+  "건강 관련 숫자, 권장량, 기준치, 발병 위험, 효과 크기는 검색된 신뢰 가능한 자료가 뒷받침할 때만 정확한 조건과 함께 사용한다. 기준이나 국가에 따라 다르면 차이를 설명한다.",
+  "마지막에는 오늘부터 적용할 수 있는 현실적인 생활 체크리스트와 과장 없는 결론을 제시한다. 참고자료는 실제 Google 검색 grounding 결과에 잡힌 출처만 프로그램이 별도로 표시한다."
+ ];
+ return [...shared,...(category==="health"?health:tips)].join("\n");
+}
+app.post("/api/generate-lifestyle",async(req,res)=>{
+ if(!process.env.GEMINI_API_KEY)return res.status(503).json({error:"Railway 환경변수 GEMINI_API_KEY가 필요합니다."});
+ const category=String(req.body.category||"");
+ if(!["tips","health"].includes(category))return res.status(400).json({error:"콘텐츠 유형을 확인해 주세요."});
+ const topic=clean(req.body.topic,240);
+ if(!topic)return res.status(400).json({error:"작성할 주제를 입력해 주세요."});
+ const prompt=lifestyleTopicPrompt(category,topic);
+ let lastError="응답 없음";
+ for(const model of MODELS){
+  for(let attempt=0;attempt<2;attempt++){
+   let timer;
+   try{
+    const controller=new AbortController();
+    timer=setTimeout(()=>controller.abort(),55000);
+    const thinkingLevel=model==="gemini-3.5-flash-lite"?"minimal":"low";
+    const response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{
+     method:"POST",
+     headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},
+     body:JSON.stringify({
+      contents:[{parts:[{text:prompt}]}],
+      tools:[{google_search:{}}],
+      generationConfig:{temperature:0.7,maxOutputTokens:7000,responseMimeType:"application/json",thinkingConfig:{thinkingLevel}}
+     }),
+     signal:controller.signal
+    });
+    const data=await response.json().catch(()=>({}));
+    clearTimeout(timer);timer=null;
+    if(response.ok){
+     const raw=data.candidates?.[0]?.content?.parts?.map(p=>p.text||"").join("").trim()||"";
+     const result=JSON.parse(raw);
+     if(!result.title||!result.body)throw new Error("AI 결과에 제목 또는 본문이 없습니다.");
+     result.title=cleanBlogText(result.title);
+     result.body=formatBlogParagraphs(cleanBlogText(result.body));
+     const arr=(v,n)=>Array.isArray(v)?v.map(x=>cleanBlogText(String(x||""))).filter(Boolean).slice(0,n):[];
+     result.keywords=arr(result.keywords,3);
+     while(result.keywords.length<3)result.keywords.push(topic);
+     const makeTag=value=>cleanBlogText(value).replace(/\s+/g,"").replace(/[^\p{L}\p{N}]/gu,"");
+     const tags=[],addTag=value=>{const t=makeTag(value);if(t&&!tags.includes(t)&&tags.length<20)tags.push(t);};
+     arr(result.hashtags,40).forEach(addTag);
+     [topic,topic+"정보",topic+"방법",topic+"관리",topic+"주의사항"].forEach(addTag);
+     const categoryTags=category==="health"
+      ?["건강한삶","건강관리","건강정보","생활습관","식습관","중년건강","건강상식","영양관리","예방정보","건강체크","건강루틴","올바른건강정보"]
+      :["생활꿀팁","생활정보","살림노하우","일상관리","실용정보","생활습관","집안관리","정리정돈","생활리뷰","생활팁","절약노하우","생활가이드"];
+     categoryTags.forEach(addTag);
+     while(tags.length<20)addTag((category==="health"?"건강정보":"생활정보")+(tags.length+1));
+     result.hashtags=tags.slice(0,20);
+     result.body=result.body.replace(/\s*#[^\s#]+/g,"").trim()+"\n\n"+result.hashtags.map(t=>"#"+t).join(" ");
+     result.imageQueries=arr(result.imageQueries,3);
+     while(result.imageQueries.length<3)result.imageQueries.push(topic+" 생활 정보");
+     const rawChunks=data.candidates?.[0]?.groundingMetadata?.groundingChunks||[];
+     const sourceMap=new Map();
+     for(const chunk of rawChunks){
+      const uri=chunk?.web?.uri;
+      if(typeof uri!=="string"||!/^https?:\/\//i.test(uri))continue;
+      if(!sourceMap.has(uri))sourceMap.set(uri,{title:clean(chunk.web.title||new URL(uri).hostname,140),url:uri});
+     }
+     const sources=[...sourceMap.values()].slice(0,8);
+     return res.json({category,topic,...result,sources,model});
+    }
+    const message=data.error?.message||("Gemini 오류 "+response.status);
+    lastError=model+" / "+response.status+" / "+message;
+    if([400,401,403].includes(response.status))return res.status(response.status).json({error:lastError});
+    if(![404,429,500,502,503,504].includes(response.status))return res.status(502).json({error:lastError});
+    if(attempt===0)await pause(1500);
+   }catch(e){
+    clearTimeout(timer);
+    if(e.name==="AbortError"){
+     lastError=model+" 응답 시간 초과";
+     if(attempt===0){await pause(1500);continue;}
+     break;
+    }
+    lastError=model+" / "+(e.message||String(e));
+    break;
+   }
+  }
+ }
+ return res.status(503).json({error:"검색 자료를 바탕으로 글을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요. 마지막 오류: "+lastError});
+});
+
 app.get("/api/status",(req,res)=>res.set("Cache-Control","no-store, no-cache, must-revalidate, proxy-revalidate").set("Pragma","no-cache").set("Expires","0").json({ok:true,aiConfigured:Boolean(process.env.GEMINI_API_KEY),models:MODELS,mode:"SEO 블로그 작성"}));
 app.listen(PORT,()=>console.log("Blog writer listening on "+PORT));
